@@ -48,8 +48,8 @@ def analyze_situation_and_decide():
     Goal: Build a high-performance model.
     
     Rules:
-    1. If there are significant label issues (>0), priority is 'data_cleaning'.
-    2. If issues are minimal or resolved, priority is 'hyperparameter_tuning'.
+    1. If there are significant label issues (>5), priority is 'data_cleaning'.
+    2. If issues are minimal (<=5), you can recommend 'start_training' but mention the issues in analysis.
     3. If everything looks perfect, 'start_training'.
     
     Respond in JSON format:

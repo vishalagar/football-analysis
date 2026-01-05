@@ -121,7 +121,22 @@ async function renderIssues(issues) {
                 <button class="btn-danger" onclick="batchDelete()" style="padding: 6px 12px;">Delete Selected</button>
             </div>
         </div>
+        
+        <div style="margin-bottom: 20px; text-align: right;">
+             <button class="btn-primary" onclick="forceShowTraining()" style="background-color: var(--warning-color); color: white;">PROCEED TO TRAINING >></button>
+        </div>
     `;
+
+    if (issues.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 40px;">
+                <h3 style="color: var(--success-color)">🎉 No Issues Found!</h3>
+                <p>Great job cleaning the dataset.</p>
+                <button class="btn-primary" onclick="forceShowTraining()" style="margin-top: 20px; padding: 10px 20px; font-size: 1rem;">Start Auto-Training Now</button>
+            </div>
+        `;
+        return;
+    }
 
     const cardsHTML = issues.map((issue, idx) => `
         <div class="issue-card" id="card-${idx}" data-path="${escapePath(issue.file_path)}">
@@ -154,6 +169,14 @@ async function renderIssues(issues) {
     `).join('');
 
     container.innerHTML = headerHTML + cardsHTML;
+}
+
+function forceShowTraining() {
+    document.getElementById('cleaning-section').style.display = 'none';
+    document.getElementById('training-section').style.display = 'block';
+
+    // Also scroll to it
+    document.getElementById('training-section').scrollIntoView({ behavior: 'smooth' });
 }
 
 function toggleSelection(idx) {
