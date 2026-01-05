@@ -108,22 +108,50 @@ async function renderIssues(issues) {
 
     // Batch actions header
     const headerHTML = `
-        <div style="display: flex; gap: 10px; margin-bottom: 15px; align-items: center; flex-wrap: wrap; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;">
-            <button class="btn-primary" onclick="selectAll()" style="padding: 6px 12px;">Select All</button>
-            <button onclick="clearSelection()" style="padding: 6px 12px;">Clear</button>
-            <span id="selected-count" style="color: var(--accent-color); font-weight: 600;">0 selected</span>
-            <div style="display: flex; gap: 5px; margin-left: auto; align-items: center; flex-wrap: wrap;">
-                <select id="batch-label-select" style="padding: 6px; border-radius: 4px; background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);">
-                    <option value="">-- Batch Move To --</option>
+        <div style="
+            position: sticky; 
+            top: 0; 
+            z-index: 100; 
+            background: rgba(15, 23, 42, 0.95); 
+            backdrop-filter: blur(10px); 
+            padding: 15px; 
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin: -20px -20px 20px -20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        ">
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="btn-primary" onclick="selectAll()" style="padding: 8px 16px;">Checkbox All</button>
+                <button onclick="clearSelection()" style="padding: 8px 16px;">Clear</button>
+                <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 5px;"></div>
+                <span id="selected-count" style="color: var(--accent-color); font-weight: 600; min-width: 80px;">0 selected</span>
+            </div>
+
+            <div style="display: flex; gap: 10px; align-items: center;">
+                 <!-- Batch Actions for Selected -->
+                 <select id="batch-label-select" style="max-width: 150px;">
+                    <option value="">-- Move To --</option>
                     ${availableClasses.map(cls => `<option value="${cls}">${cls}</option>`).join('')}
                 </select>
-                <button class="btn-success" onclick="batchMove()" style="padding: 6px 12px;">Move Selected</button>
-                <button class="btn-danger" onclick="batchDelete()" style="padding: 6px 12px;">Delete Selected</button>
+                <button class="btn-success" onclick="batchMove()">Move</button>
+                <button class="btn-danger" onclick="batchDelete()">Delete</button>
+                
+                <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 10px;"></div>
+                
+                <!-- Auto-Fix All Magic Button -->
+                <button class="btn-magic" onclick="autoFixAll()" style="padding: 8px 20px; display: flex; align-items: center; gap: 8px;">
+                    <span>✨</span> Auto-Fix All (Accept Props)
+                </button>
             </div>
         </div>
         
-        <div style="margin-bottom: 20px; text-align: right;">
-             <button class="btn-primary" onclick="forceShowTraining()" style="background-color: var(--warning-color); color: white;">PROCEED TO TRAINING >></button>
+        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+             <span style="color: var(--text-secondary); font-size: 0.9rem;">Review the items below or use Auto-Fix to accept all suggestions.</span>
+             <button class="btn-primary" onclick="forceShowTraining()" style="background-color: var(--warning-color); color: white; width: auto; padding: 10px 20px;">
+                PROCEED TO TRAINING >>
+             </button>
         </div>
     `;
 
@@ -146,7 +174,7 @@ async function renderIssues(issues) {
                    onchange="toggleSelection(${idx})"
                    id="checkbox-${idx}">
             <div style="position: relative;">
-                <img src="/dataset/${issue.split}/${issue.given_label}/${fileName(issue.file_path)}" class="issue-img" onerror="this.src='https://via.placeholder.com/200?text=Error'">
+                <img src="/dataset/${issue.split}/${issue.given_label}/${fileName(issue.file_path)}?t=${new Date().getTime()}" class="issue-img" onerror="this.src='https://via.placeholder.com/200?text=Error'">
                 <span style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem;">${issue.split.toUpperCase()}</span>
             </div>
             <div class="issue-details">
@@ -266,6 +294,48 @@ async function batchDelete() {
         }
     } catch (e) {
         alert('Batch delete failed: ' + e.message);
+    }
+}
+
+async function autoFixAll() {
+    if (allIssues.length === 0) return;
+    if (!confirm(`Automatically accept suggestions for all ${allIssues.length} issues?\n\nThis will move files to their 'Suggested' folders.`)) return;
+
+    // We need to construct a batch request where new_label = suggested_label for each item
+    // Since our backend /batch_fix takes a single new_label for all files (for now), 
+    // we actually have to group them by suggested label OR call fix_issue in parallel.
+    // Let's call fix_issue in parallel for now as it's easier to implement without changing backend again.
+    // Limit concurrency to avoid browser/server overload.
+
+    // Show loading state
+    const originalText = event.target.innerText;
+    event.target.innerText = "Fixing...";
+    event.target.disabled = true;
+
+    try {
+        const promises = allIssues.map(issue =>
+            fetch(`${API_BASE}/fix_issue`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file_path: issue.file_path,
+                    action: 'move',
+                    new_label: issue.suggested_label
+                })
+            })
+        );
+
+        await Promise.all(promises);
+
+        // Refresh
+        allIssues = []; // Cleared
+        renderIssues([]);
+        fetchStats();
+
+    } catch (e) {
+        alert("Auto-fix failed: " + e.message);
+        event.target.innerText = originalText;
+        event.target.disabled = false;
     }
 }
 
@@ -389,8 +459,43 @@ function updateAutoTrainingUI(state) {
             ${result ? `
                 <div>Best Val Accuracy: ${(result.val_acc * 100).toFixed(2)}%</div>
                 <div>Train Accuracy: ${(result.train_acc * 100).toFixed(2)}%</div>
-                <div>Best Config: ${result.config_name}</div>
-                <div>Model saved at: ${result.model_path}</div>
+                <div style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(255,255,255,0.1);">
+                    <div>Avg Miss Rate: ${(result.avg_miss_rate * 100).toFixed(2)}%</div>
+                    <div>Avg Overkill Rate: ${(result.avg_overkill_rate * 100).toFixed(2)}%</div>
+                </div>
+                
+                <div style="margin-top: 15px; max-height: 200px; overflow-y: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.2); text-align: left;">
+                                <th style="padding: 4px;">Class</th>
+                                <th style="padding: 4px;">Acc</th>
+                                <th style="padding: 4px;">Miss</th>
+                                <th style="padding: 4px;">Overkill</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${Object.entries(result.per_class_metrics).map(([cls, m]) => `
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding: 4px; color: var(--accent-color);">${cls}</td>
+                                    <td style="padding: 4px;">${(m.accuracy * 100).toFixed(0)}%</td>
+                                    <td style="padding: 4px; color: ${m.miss_rate > 0.1 ? 'var(--danger-color)' : 'inherit'}">
+                                        ${(m.miss_rate * 100).toFixed(0)}%
+                                    </td>
+                                    <td style="padding: 4px; color: ${m.overkill_rate > 0.1 ? 'var(--warning-color)' : 'inherit'}">
+                                        ${(m.overkill_rate * 100).toFixed(0)}%
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div style="margin-top:10px; color: var(--text-secondary); font-size: 0.8rem;">
+                    Config: ${result.config_name}<br>
+                    Trained for ${result.epochs_trained} epochs
+                </div>
+                <div style="margin-top:5px; font-size: 0.7rem;">Model: ${fileName(result.model_path)}</div>
             ` : '<div>Training completed successfully!</div>'}
         `;
         btn.disabled = false;

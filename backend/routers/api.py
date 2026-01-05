@@ -86,6 +86,48 @@ def batch_fix_issues(req: BatchFixRequest):
         success, msg = apply_fix(path, req.action, req.new_label)
         results.append({"path": path, "success": success, "message": msg})
     
+    success: int
+    failed: int
+    results: List[dict]
+
+class BatchItem(BaseModel):
+    file_path: str
+    new_label: str
+
+class BatchSuggestionRequest(BaseModel):
+    items: List[BatchItem]
+
+@router.post("/batch_fix_suggestions")
+def batch_fix_suggestions(req: BatchSuggestionRequest):
+    """
+    Apply varying fixes (move to specific labels) for multiple files.
+    Ideal for 'Accept All Suggestions'.
+    """
+    results = []
+    
+    for item in req.items:
+        # Action is always 'move' for suggestions
+        success, msg = apply_fix(item.file_path, 'move', item.new_label)
+        results.append({"path": item.file_path, "success": success, "message": msg})
+        
+    success_count = sum(1 for r in results if r["success"])
+    return {
+        "status": "completed",
+        "total": len(req.items),
+        "success": success_count,
+        "results": results
+    }
+
+@router.post("/batch_fix")
+def batch_fix_issues(req: BatchFixRequest):
+    """
+    Apply the same fix to multiple files.
+    """
+    results = []
+    for path in req.file_paths:
+        success, msg = apply_fix(path, req.action, req.new_label)
+        results.append({"path": path, "success": success, "message": msg})
+    
     success_count = sum(1 for r in results if r["success"])
     return {
         "status": "completed",

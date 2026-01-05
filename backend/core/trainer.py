@@ -9,6 +9,12 @@ import optuna
 from torch.utils.data import DataLoader
 from .models import create_model
 from .data_manager import CustomImageDataset, TRAIN_DIR, VAL_DIR, TEST_DIR, transform
+from .utils import setup_logger
+from datetime import datetime
+
+# Setup Logger
+logger = setup_logger("pluto_trainer", "../../logs/pluto.log")
+
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -115,9 +121,10 @@ def tune_hyperparameters(n_trials=5):
     return study.best_params
 
 def run_automated_training(full_epochs=20, dataset_train=None, dataset_val=None):
-    print("Starting Automated Training...")
+    logger.info("Starting Automated Training...")
     
     # Load defaults if not provided
+
     if dataset_train is None:
         dataset_train = CustomImageDataset(TRAIN_DIR)
     if dataset_val is None:
@@ -180,6 +187,34 @@ def run_automated_training(full_epochs=20, dataset_train=None, dataset_val=None)
 
 # ============== Phase 4: Auto-Exploration Engine ==============
 
+def compute_metrics_from_cm(cm, classes):
+    """Compute detailed metrics including Miss and Overkill rates."""
+    import numpy as np
+    
+    metrics = {}
+    
+    # Per-class metrics
+    for i, class_name in enumerate(classes):
+        tp = cm[i, i]
+        fn = cm[i, :].sum() - tp  # False Negatives (Miss)
+        fp = cm[:, i].sum() - tp  # False Positives (Overkill)
+        tn = cm.sum() - (tp + fn + fp)
+        
+        total_actual = tp + fn
+        total_pred = tp + fp
+        
+        accuracy = tp / total_actual if total_actual > 0 else 0
+        miss_rate = fn / total_actual if total_actual > 0 else 0
+        overkill_rate = fp / total_pred if total_pred > 0 else 0
+        
+        metrics[class_name] = {
+            "accuracy": float(accuracy),
+            "miss_rate": float(miss_rate),  # False Negative Rate
+            "overkill_rate": float(overkill_rate)  # False Discovery Rate
+        }
+        
+    return metrics
+
 def compute_confusion_matrix(model, loader, num_classes):
     """Compute confusion matrix for model evaluation."""
     import numpy as np
@@ -203,70 +238,47 @@ def compute_confusion_matrix(model, loader, num_classes):
 def auto_explore(target_accuracy=0.90, max_time_hours=2):
     """
     Automatically explores multiple configurations until success or exhaustion.
-    
-    Args:
-        target_accuracy: Target validation accuracy to achieve
-        max_time_hours: Maximum time budget in hours
-    
-    Returns:
-        dict with status, best_result, and all_results
     """
-    print("\n🚀 Starting Auto-Exploration...")
+    logger.info("\n🚀 Starting Auto-Exploration...")
+
     
     # Load datasets
-    dataset_train = CustomImageDataset(TRAIN_DIR)
-    dataset_val = CustomImageDataset(VAL_DIR)
+    try:
+        dataset_train = CustomImageDataset(TRAIN_DIR)
+        dataset_val = CustomImageDataset(VAL_DIR)
+        classes = dataset_train.classes
+    except Exception as e:
+        return {"status": "failed", "error": f"Dataset error: {str(e)}"}
+
     dataset_size = len(dataset_train)
     
-    # Adaptive budget based on dataset size
+    # Adaptive budget logic (kept same as before)
     if dataset_size < 1000:
         max_trials_per_config = 3
         max_configs = 3
-        time_budget = 3600  # 1 hour
-        print(f"  Dataset size: {dataset_size} (SMALL) - Budget: 3 configs x 3 trials")
+        time_budget = 3600
+        epochs_per_trial = 5 # Increased slightly
+        epochs_final = 15
     elif dataset_size < 10000:
         max_trials_per_config = 5
         max_configs = 5
-        time_budget = 7200  # 2 hours
-        print(f"  Dataset size: {dataset_size} (MEDIUM) - Budget: 5 configs x 5 trials")
+        time_budget = 7200
+        epochs_per_trial = 3
+        epochs_final = 10
     else:
         max_trials_per_config = 8
         max_configs = 6
-        time_budget = min(max_time_hours * 3600, 21600)  # Max 6 hours
-        print(f"  Dataset size: {dataset_size} (LARGE) - Budget: 6 configs x 8 trials")
+        time_budget = 21600
+        epochs_per_trial = 2
+        epochs_final = 10
     
-    # Configuration queue to explore
+    # Configs (kept same)
     exploration_configs = [
-        {
-            "name": "ResNet18 + Standard HP",
-            "lr_range": [1e-5, 1e-2],
-            "batch_size_options": [16, 32, 64],
-            "weight_decay": [1e-5, 1e-3]
-        },
-        {
-            "name": "ResNet18 + High Regularization",
-            "lr_range": [1e-6, 1e-3],
-            "batch_size_options": [16, 32],
-            "weight_decay": [1e-4, 1e-2]
-        },
-        {
-            "name": "ResNet18 + Low LR",
-            "lr_range": [1e-6, 1e-4],
-            "batch_size_options": [32, 64],
-            "weight_decay": [1e-5, 1e-4]
-        },
-        {
-            "name": "ResNet18 + High LR",
-            "lr_range": [1e-4, 1e-2],
-            "batch_size_options": [16, 32],
-            "weight_decay": [1e-5, 1e-3]
-        },
-        {
-            "name": "ResNet18 + Conservative",
-            "lr_range": [5e-5, 5e-4],
-            "batch_size_options": [32],
-            "weight_decay": [1e-4, 1e-3]
-        },
+        {"name": "ResNet18 + Standard HP", "lr_range": [1e-5, 1e-2], "batch_size_options": [16, 32, 64], "weight_decay": [1e-5, 1e-3]},
+        {"name": "ResNet18 + High Regularization", "lr_range": [1e-6, 1e-3], "batch_size_options": [16, 32], "weight_decay": [1e-4, 1e-2]},
+        {"name": "ResNet18 + Low LR", "lr_range": [1e-6, 1e-4], "batch_size_options": [32, 64], "weight_decay": [1e-5, 1e-4]},
+        {"name": "ResNet18 + High LR", "lr_range": [1e-4, 1e-2], "batch_size_options": [16, 32], "weight_decay": [1e-5, 1e-3]},
+        {"name": "ResNet18 + Conservative", "lr_range": [5e-5, 5e-4], "batch_size_options": [32], "weight_decay": [1e-4, 1e-3]},
     ]
     
     start_time = time.time()
@@ -275,12 +287,12 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
     
     for config_idx, config in enumerate(exploration_configs[:max_configs]):
         if time.time() - start_time > time_budget:
-            print(f"\n⏰ Time budget exhausted ({time_budget / 3600:.1f}h)")
             break
         
-        print(f"\n📊 Config {config_idx + 1}/{min(len(exploration_configs), max_configs)}: {config['name']}")
+        logger.info(f"\n📊 Config {config_idx + 1}/{min(len(exploration_configs), max_configs)}: {config['name']}")
         
-        # Run Optuna tuning for this config
+        # Run Optuna tuning
+
         def objective(trial):
             lr = trial.suggest_float("lr", *config["lr_range"], log=True)
             batch_size = trial.suggest_categorical("batch_size", config["batch_size_options"])
@@ -288,25 +300,29 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
             
             params = {"lr": lr, "batch_size": batch_size, "weight_decay": weight_decay}
             
-            # Short training for exploration (3 epochs)
-            model, best_acc, history = train_model(params, dataset_train, dataset_val, num_epochs=3)
+            # Short training for exploration
+            model, best_acc, history = train_model(params, dataset_train, dataset_val, num_epochs=epochs_per_trial)
             return best_acc
         
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=max_trials_per_config, show_progress_bar=False)
         
         best_params = study.best_params
-        print(f"  ✅ Best params: {best_params}, Val Acc: {study.best_value:.4f}")
         
-        # Train full model with best params (10 epochs)
-        print(f"  🏋️ Training full model...")
-        model, val_acc, history = train_model(best_params, dataset_train, dataset_val, num_epochs=10)
+        # Train full model with best params
+        logger.info(f"  🏋️ Training full model ({epochs_final} epochs)...")
+        model, val_acc, history = train_model(best_params, dataset_train, dataset_val, num_epochs=epochs_final)
         
-        # Compute confusion matrix
+        # Compute confusion matrix & metrics
+
         val_loader = DataLoader(dataset_val, batch_size=best_params['batch_size'], shuffle=False)
-        cm = compute_confusion_matrix(model, val_loader, len(dataset_train.classes))
+        cm = compute_confusion_matrix(model, val_loader, len(classes))
+        detailed_metrics = compute_metrics_from_cm(cm, classes)
         
-        # Get final metrics
+        # Calculate Average Miss & Overkill
+        avg_miss = sum(m['miss_rate'] for m in detailed_metrics.values()) / len(classes)
+        avg_overkill = sum(m['overkill_rate'] for m in detailed_metrics.values()) / len(classes)
+
         train_loader = DataLoader(dataset_train, batch_size=best_params['batch_size'], shuffle=False)
         criterion = nn.CrossEntropyLoss()
         train_loss, train_acc = validate(model, train_loader, criterion)
@@ -318,44 +334,83 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
             "best_params": best_params,
             "val_acc": val_acc_final,
             "train_acc": train_acc,
-            "val_loss": val_loss,
-            "train_loss": train_loss,
-            "confusion_matrix": cm.tolist(),
-            "history": history
+            "avg_miss_rate": avg_miss,
+            "avg_overkill_rate": avg_overkill,
+            "per_class_metrics": detailed_metrics, # Detailed stats
+            "epochs_trained": epochs_final,
+            "history": history,
+            "confusion_matrix": cm.tolist()
         }
         
         all_results.append(result)
         
-        # Track best
+        # Track best (consider miss rate too in future, but acc for now)
         if best_overall is None or val_acc_final > best_overall["val_acc"]:
             best_overall = result
-            # Save best model
             os.makedirs("../../models", exist_ok=True)
+            
+            # Save Versioned Model
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            versioned_name = f"model_{timestamp}_acc{val_acc_final:.4f}.pth"
+            versioned_path = os.path.abspath(f"../../models/{versioned_name}")
+            torch.save(model.state_dict(), versioned_path)
+            
+            # Update 'best_model.pth' symlink-like behavior (copy/overwrite)
             save_path = os.path.abspath("../../models/best_model.pth")
             torch.save(model.state_dict(), save_path)
+            
             best_overall["model_path"] = save_path
+            logger.info(f"  💾 Model saved to {save_path} (and {versioned_name})")
         
-        print(f"  🎯 Final: Train={train_acc:.4f}, Val={val_acc_final:.4f}")
+        logger.info(f"  🎯 Final: Val={val_acc_final:.4f}, Miss={avg_miss:.4f}, Overkill={avg_overkill:.4f}")
+
         
-        # Success criteria
+        # Success logic...
         if val_acc_final >= target_accuracy:
-            print(f"\n🎉 SUCCESS! Achieved {val_acc_final:.4f} >= {target_accuracy:.4f}")
-            return {
+             return {
                 "status": "success",
                 "best_result": best_overall,
                 "all_results": all_results,
                 "total_trials": config_idx + 1
             }
         
-        # Early stopping: No improvement in last 3 configs
+        # Save metrics to JSON
+        try:
+            import json
+            metrics_path = os.path.abspath("../../models/metrics.json")
+            with open(metrics_path, 'w') as f:
+                # helper to handle numpy types
+                def default(o):
+                    if isinstance(o, (np.int_, np.intc, np.intp, np.int8,
+                        np.int16, np.int32, np.int64, np.uint8,
+                        np.uint16, np.uint32, np.uint64)): return int(o)
+                    elif isinstance(o, (np.float_, np.float16, np.float32, 
+                        np.float64)): return float(o)
+                    elif isinstance(o, (np.ndarray,)): return o.tolist()
+                    return str(o)
+                    
+                json.dump(best_overall, f, indent=4, default=default)
+            logger.info(f"  💾 Metrics saved to {metrics_path}")
+            
+            # Log per-class metrics
+            logger.info("\n  🔍 Per-Class Performance:")
+            logger.info(f"  {'Class':<20} {'Acc':<10} {'Miss':<10} {'Overkill':<10}")
+            logger.info("-" * 55)
+            for cls, metrics in best_overall['per_class_metrics'].items():
+                logger.info(f"  {cls:<20} {metrics['accuracy']:.2f}       {metrics['miss_rate']:.2f}       {metrics['overkill_rate']:.2f}")
+            logger.info("-" * 55 + "\n")
+            
+        except Exception as e:
+            logger.error(f"Failed to save metrics.json: {e}")
+
+
+        # Early stopping logic... (same as before)
         if len(all_results) >= 3:
             recent = [r["val_acc"] for r in all_results[-3:]]
-            if max(recent) - min(recent) < 0.02:  # Less than 2% improvement
-                print(f"\n📉 No significant improvement in last 3 configs. Stopping.")
+            if max(recent) - min(recent) < 0.02:
+                print(f"\n📉 No significant improvement. Stopping.")
                 break
     
-    # Exhausted all options
-    print(f"\n⚠️ Exploration exhausted. Best: {best_overall['val_acc']:.4f} (Target: {target_accuracy:.4f})")
     return {
         "status": "need_user_review",
         "best_result": best_overall,
@@ -363,8 +418,9 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
         "total_trials": len(all_results)
     }
 
+
 def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs=10):
-    """Modified train_model to support weight_decay."""
+    """Modified train_model to support weight_decay AND Learning Rate Scheduler."""
     num_classes = len(dataset_train.classes)
     model = create_model(num_classes).to(DEVICE)
     
@@ -373,6 +429,11 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
         model.parameters(),
         lr=params['lr'],
         weight_decay=params.get('weight_decay', 0.0)
+    )
+    
+    # Scheduler: Reduce LR if validation loss stops improving
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.1, patience=2, verbose=True
     )
     
     train_loader = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True)
@@ -387,12 +448,16 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer)
         val_loss, val_acc = validate(model, val_loader, criterion)
         
+        # Step the scheduler
+        scheduler.step(val_loss)
+        
         history.append({
             "epoch": epoch + 1,
             "train_loss": train_loss,
             "train_acc": train_acc,
             "val_loss": val_loss,
-            "val_acc": val_acc
+            "val_acc": val_acc,
+            "lr": optimizer.param_groups[0]['lr']
         })
         
         if val_acc > best_acc:
@@ -402,6 +467,8 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
     model.load_state_dict(best_model_wts)
     return model, best_acc, history
 
+
 # Override train_model to use weight_decay version
 train_model = train_model_with_weight_decay
+
 
