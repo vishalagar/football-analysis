@@ -1,0 +1,73 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic AutoML</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div class="logo">
+            <span>✨</span> Agentic AutoML
+        </div>
+        <div class="status-badge" id="system-status">System Ready</div>
+    </header>
+
+    <main>
+        <!-- Agent Section -->
+        <section class="agent-card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>🤖 Agent Brain</h2>
+                <button class="btn-primary" onclick="triggerAnalysis()" style="max-width: 150px;">Analyze Dataset</button>
+            </div>
+            <div id="agent-output" class="agent-response">
+                Waiting for analysis...
+            </div>
+        </section>
+
+        <!-- Data Cleaning Section -->
+        <section id="cleaning-section" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3>⚠️ Detected Issues</h3>
+                <span style="color: var(--text-secondary); font-size: 0.9rem;" id="issue-count">0 Issues found</span>
+            </div>
+            <div class="issues-grid" id="issues-container">
+                <!-- Issue Cards will be injected here -->
+            </div>
+        </section>
+        
+        <!-- Training Section -->
+        <section id="training-section" style="display: none; height: 100%;">
+             <div class="agent-card" style="background: linear-gradient(145deg, rgba(20, 30, 40, 0.9), rgba(10, 15, 20, 0.9));">
+                <h2>🚀 Training Dashboard</h2>
+                <div style="margin-top: 15px;">
+                    <p>Parameters set by Optuna.</p>
+                    <button class="btn-success" onclick="startTraining()" id="train-btn">Start Auto-Training</button>
+                    <div id="training-logs" class="agent-response" style="height: 200px; overflow-y: auto; margin-top: 15px; font-size: 0.8rem;">
+                        Ready to launch...
+                    </div>
+                </div>
+             </div>
+        </section>
+    </main>
+
+    <aside>
+        <h3>Dataset Stats</h3>
+        <div class="stats-card" id="stats-container">
+            Loading...
+        </div>
+        
+        <div style="margin-top: auto;">
+             <p style="font-size: 0.8rem; color: var(--text-secondary);">Powered by Llama3 & Cleanlab</p>
+        </div>
+    </aside>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
