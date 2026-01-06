@@ -72,7 +72,7 @@ def get_dataset_stats():
         for cls_name in os.listdir(path):
             cls_path = os.path.join(path, cls_name)
             if os.path.isdir(cls_path):
-                count = len([f for f in os.listdir(cls_path) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+                count = len([f for f in os.listdir(cls_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))])
                 classes[cls_name] = count
                 total += count
         stats[split] = {"count": total, "classes": classes}
@@ -159,7 +159,7 @@ def detect_issues():
     all_issues.extend(detect_issues_in_split("train", TRAIN_DIR))
     
     # Check Valid
-    all_issues.extend(detect_issues_in_split("valid", VAL_DIR))
+    all_issues.extend(detect_issues_in_split("val", VAL_DIR))
         
     return all_issues
 

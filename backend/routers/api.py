@@ -1,7 +1,7 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from backend.core.agent_brain import analyze_situation_and_decide
 from backend.core.data_manager import apply_fix, get_dataset_stats
 from backend.core.trainer import run_automated_training

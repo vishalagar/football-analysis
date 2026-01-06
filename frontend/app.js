@@ -109,40 +109,40 @@ async function renderIssues(issues) {
     // Batch actions header
     const headerHTML = `
         <div style="
-            position: sticky; 
-            top: 0; 
-            z-index: 100; 
-            background: rgba(15, 23, 42, 0.95); 
-            backdrop-filter: blur(10px); 
+            position: static; 
+            background: rgba(15, 23, 42, 0.6); 
             padding: 15px; 
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            margin: -20px -20px 20px -20px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            flex-wrap: wrap;
+            gap: 10px;
+            z-index: 1;
         ">
             <div style="display: flex; gap: 10px; align-items: center;">
-                <button class="btn-primary" onclick="selectAll()" style="padding: 8px 16px;">Checkbox All</button>
-                <button onclick="clearSelection()" style="padding: 8px 16px;">Clear</button>
-                <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 5px;"></div>
-                <span id="selected-count" style="color: var(--accent-color); font-weight: 600; min-width: 80px;">0 selected</span>
+                <button class="btn-primary" onclick="selectAll()" style="padding: 8px 12px; font-size: 0.9rem;">Select All</button>
+                <button onclick="clearSelection()" style="padding: 8px 12px; font-size: 0.9rem;">Clear</button>
+                <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 5px;"></div>
+                <span id="selected-count" style="color: var(--accent-color); font-weight: 600; min-width: 80px; font-size: 0.9rem;">0 selected</span>
             </div>
 
             <div style="display: flex; gap: 10px; align-items: center;">
                  <!-- Batch Actions for Selected -->
-                 <select id="batch-label-select" style="max-width: 150px;">
+                 <select id="batch-label-select" style="max-width: 150px; padding: 6px;">
                     <option value="">-- Move To --</option>
                     ${availableClasses.map(cls => `<option value="${cls}">${cls}</option>`).join('')}
                 </select>
-                <button class="btn-success" onclick="batchMove()">Move</button>
-                <button class="btn-danger" onclick="batchDelete()">Delete</button>
+                <button class="btn-success" onclick="batchMove()" style="padding: 6px 12px; font-size: 0.9rem;">Move</button>
+                <button class="btn-danger" onclick="batchDelete()" style="padding: 6px 12px; font-size: 0.9rem;">Delete</button>
                 
-                <div style="width: 1px; height: 24px; background: rgba(255,255,255,0.1); margin: 0 10px;"></div>
+                <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 10px;"></div>
                 
                 <!-- Auto-Fix All Magic Button -->
-                <button class="btn-magic" onclick="autoFixAll()" style="padding: 8px 20px; display: flex; align-items: center; gap: 8px;">
-                    <span>✨</span> Auto-Fix All (Accept Props)
+                <button class="btn-magic" onclick="autoFixAll()" style="padding: 8px 16px; display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
+                    <span>✨</span> Auto-Fix All
                 </button>
             </div>
         </div>

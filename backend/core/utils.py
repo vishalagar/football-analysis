@@ -15,7 +15,7 @@ def setup_logger(name="pluto_logger", log_file="training.log", level=logging.INF
         "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
 
-    handler = logging.FileHandler(log_file)
+    handler = logging.FileHandler(log_file, encoding='utf-8')
     handler.setFormatter(formatter)
 
     console_handler = logging.StreamHandler(sys.stdout)

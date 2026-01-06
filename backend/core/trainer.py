@@ -433,7 +433,7 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
     
     # Scheduler: Reduce LR if validation loss stops improving
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.1, patience=2, verbose=True
+        optimizer, mode='min', factor=0.1, patience=2
     )
     
     train_loader = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True)
