@@ -188,17 +188,26 @@ def run_automated_training(full_epochs=20, dataset_train=None, dataset_val=None)
 # ============== Phase 4: Auto-Exploration Engine ==============
 
 def compute_metrics_from_cm(cm, classes):
-    """Compute detailed metrics including Miss and Overkill rates."""
+    """Compute detailed metrics including Miss and Overkill rates.
+    Returns both per-class metrics AND overall dataset metrics."""
     import numpy as np
     
     metrics = {}
+    
+    # Accumulators for overall metrics
+    total_tp = 0
+    total_fn = 0
+    total_fp = 0
     
     # Per-class metrics
     for i, class_name in enumerate(classes):
         tp = cm[i, i]
         fn = cm[i, :].sum() - tp  # False Negatives (Miss)
         fp = cm[:, i].sum() - tp  # False Positives (Overkill)
-        tn = cm.sum() - (tp + fn + fp)
+        
+        total_tp += tp
+        total_fn += fn
+        total_fp += fp
         
         total_actual = tp + fn
         total_pred = tp + fp
@@ -209,11 +218,23 @@ def compute_metrics_from_cm(cm, classes):
         
         metrics[class_name] = {
             "accuracy": float(accuracy),
-            "miss_rate": float(miss_rate),  # False Negative Rate
-            "overkill_rate": float(overkill_rate)  # False Discovery Rate
+            "miss_rate": float(miss_rate),
+            "overkill_rate": float(overkill_rate)
         }
-        
-    return metrics
+    
+    # Overall dataset metrics (NOT average of per-class)
+    total_samples = total_tp + total_fn
+    total_predictions = total_tp + total_fp
+    
+    overall_accuracy = total_tp / total_samples if total_samples > 0 else 0
+    overall_miss_rate = total_fn / total_samples if total_samples > 0 else 0
+    overall_overkill_rate = total_fp / total_predictions if total_predictions > 0 else 0
+    
+    return metrics, {
+        "accuracy": float(overall_accuracy),
+        "miss_rate": float(overall_miss_rate),
+        "overkill_rate": float(overall_overkill_rate)
+    }
 
 def compute_confusion_matrix(model, loader, num_classes):
     """Compute confusion matrix for model evaluation."""
@@ -314,15 +335,10 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
         model, val_acc, history = train_model(best_params, dataset_train, dataset_val, num_epochs=epochs_final)
         
         # Compute confusion matrix & metrics
-
         val_loader = DataLoader(dataset_val, batch_size=best_params['batch_size'], shuffle=False)
         cm = compute_confusion_matrix(model, val_loader, len(classes))
-        detailed_metrics = compute_metrics_from_cm(cm, classes)
+        per_class_metrics, overall_metrics = compute_metrics_from_cm(cm, classes)
         
-        # Calculate Average Miss & Overkill
-        avg_miss = sum(m['miss_rate'] for m in detailed_metrics.values()) / len(classes)
-        avg_overkill = sum(m['overkill_rate'] for m in detailed_metrics.values()) / len(classes)
-
         train_loader = DataLoader(dataset_train, batch_size=best_params['batch_size'], shuffle=False)
         criterion = nn.CrossEntropyLoss()
         train_loss, train_acc = validate(model, train_loader, criterion)
@@ -334,9 +350,9 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
             "best_params": best_params,
             "val_acc": val_acc_final,
             "train_acc": train_acc,
-            "avg_miss_rate": avg_miss,
-            "avg_overkill_rate": avg_overkill,
-            "per_class_metrics": detailed_metrics, # Detailed stats
+            "miss_rate": overall_metrics['miss_rate'],
+            "overkill_rate": overall_metrics['overkill_rate'],
+            "per_class_metrics": per_class_metrics,
             "epochs_trained": epochs_final,
             "history": history,
             "confusion_matrix": cm.tolist()
@@ -362,7 +378,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
             best_overall["model_path"] = save_path
             logger.info(f"  💾 Model saved to {save_path} (and {versioned_name})")
         
-        logger.info(f"  🎯 Final: Val={val_acc_final:.4f}, Miss={avg_miss:.4f}, Overkill={avg_overkill:.4f}")
+        logger.info(f"  🎯 Final: Val={val_acc_final:.4f}, Miss={overall_metrics['miss_rate']:.4f}, Overkill={overall_metrics['overkill_rate']:.4f}")
 
         
         # Success logic...

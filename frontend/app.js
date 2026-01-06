@@ -106,95 +106,100 @@ async function renderIssues(issues) {
         availableClasses = [];
     }
 
-    // Batch actions header
-    const headerHTML = `
-        <div style="
-            position: static; 
-            background: rgba(15, 23, 42, 0.6); 
-            padding: 15px; 
-            border: 1px solid rgba(255,255,255,0.1);
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-radius: 8px;
-            flex-wrap: wrap;
-            gap: 10px;
-            z-index: 1;
-        ">
-            <div style="display: flex; gap: 10px; align-items: center;">
-                <button class="btn-primary" onclick="selectAll()" style="padding: 8px 12px; font-size: 0.9rem;">Select All</button>
-                <button onclick="clearSelection()" style="padding: 8px 12px; font-size: 0.9rem;">Clear</button>
-                <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 5px;"></div>
-                <span id="selected-count" style="color: var(--accent-color); font-weight: 600; min-width: 80px; font-size: 0.9rem;">0 selected</span>
-            </div>
-
-            <div style="display: flex; gap: 10px; align-items: center;">
-                 <!-- Batch Actions for Selected -->
-                 <select id="batch-label-select" style="max-width: 150px; padding: 6px;">
-                    <option value="">-- Move To --</option>
-                    ${availableClasses.map(cls => `<option value="${cls}">${cls}</option>`).join('')}
-                </select>
-                <button class="btn-success" onclick="batchMove()" style="padding: 6px 12px; font-size: 0.9rem;">Move</button>
-                <button class="btn-danger" onclick="batchDelete()" style="padding: 6px 12px; font-size: 0.9rem;">Delete</button>
-                
-                <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 10px;"></div>
-                
-                <!-- Auto-Fix All Magic Button -->
-                <button class="btn-magic" onclick="autoFixAll()" style="padding: 8px 16px; display: flex; align-items: center; gap: 6px; font-size: 0.9rem;">
-                    <span>✨</span> Auto-Fix All
-                </button>
-            </div>
-        </div>
-        
-        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-             <span style="color: var(--text-secondary); font-size: 0.9rem;">Review the items below or use Auto-Fix to accept all suggestions.</span>
-             <button class="btn-primary" onclick="forceShowTraining()" style="background-color: var(--warning-color); color: white; width: auto; padding: 10px 20px;">
-                PROCEED TO TRAINING >>
-             </button>
-        </div>
-    `;
-
     if (issues.length === 0) {
         container.innerHTML = `
-            <div style="text-align: center; padding: 40px;">
-                <h3 style="color: var(--success-color)">🎉 No Issues Found!</h3>
-                <p>Great job cleaning the dataset.</p>
-                <button class="btn-primary" onclick="forceShowTraining()" style="margin-top: 20px; padding: 10px 20px; font-size: 1rem;">Start Auto-Training Now</button>
+            <div style="text-align: center; padding: 60px 20px; background: rgba(15, 23, 42, 0.4); border-radius: 12px; margin-top: 20px;">
+                <h3 style="color: var(--success-color); margin-bottom: 10px;">🎉 No Issues Found!</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 20px;">Dataset looks clean!</p>
+                <button class="btn-primary" onclick="forceShowTraining()" style="padding: 12px 24px; font-size: 1rem;">Start Training Now</button>
             </div>
         `;
         return;
     }
 
-    const cardsHTML = issues.map((issue, idx) => `
-        <div class="issue-card" id="card-${idx}" data-path="${escapePath(issue.file_path)}">
-            <input type="checkbox" 
-                   class="issue-checkbox" 
-                   style="position: absolute; top: 10px; left: 10px; width: 20px; height: 20px; cursor: pointer; z-index: 10;"
-                   onchange="toggleSelection(${idx})"
-                   id="checkbox-${idx}">
-            <div style="position: relative;">
-                <img src="/dataset/${issue.split}/${issue.given_label}/${fileName(issue.file_path)}?t=${new Date().getTime()}" class="issue-img" onerror="this.src='https://via.placeholder.com/200?text=Error'">
-                <span style="position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem;">${issue.split.toUpperCase()}</span>
-            </div>
-            <div class="issue-details">
-                <h4>Given: <span style="color: var(--danger-color)">${issue.given_label}</span></h4>
-                <h4>Suggested: <span style="color: var(--success-color)">${issue.suggested_label}</span></h4>
-                <p>Conf: ${(issue.confidence * 100).toFixed(1)}%</p>
-                <div style="margin: 10px 0;">
-                    <label style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Move to:</label>
-                    <select id="label-select-${idx}" style="width: 100%; padding: 6px; border-radius: 4px; background: rgba(255,255,255,0.1); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.2);">
-                        ${availableClasses.map(cls => `<option value="${cls}" ${cls === issue.suggested_label ? 'selected' : ''}>${cls}</option>`).join('')}
-                    </select>
+    // Batch actions header - SIMPLE, non-sticky
+    const headerHTML = `
+        <div style="background: rgba(30, 41, 59, 0.8); padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button class="btn-primary" onclick="selectAll()" style="padding: 6px 12px; font-size: 0.85rem;">Select All</button>
+                    <button onclick="clearSelection()" style="padding: 6px 12px; font-size: 0.85rem;">Clear</button>
+                    <span id="selected-count" style="color: var(--accent-color); font-weight: 600; margin-left: 8px; font-size: 0.9rem;">0 selected</span>
                 </div>
-                <div class="actions">
-                    <button class="btn-success" onclick="moveToSelected(${idx})">Move</button>
-                    <button class="btn-danger" onclick="fixIssue(${idx}, 'delete')">Delete</button>
-                    <button onclick="fixIssue(${idx}, 'ignore')">Ignore</button>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <select id="batch-label-select" style="padding: 6px 10px; font-size: 0.85rem; min-width: 120px;">
+                        <option value="">-- Move To --</option>
+                        ${availableClasses.map(cls => `<option value="${cls}">${cls}</option>`).join('')}
+                    </select>
+                    <button class="btn-success" onclick="batchMove()" style="padding: 6px 14px; font-size: 0.85rem;">Move</button>
+                    <button class="btn-danger" onclick="batchDelete()" style="padding: 6px 14px; font-size: 0.85rem;">Delete</button>
+                    <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 4px;"></div>
+                    <button class="btn-magic" onclick="autoFixAll()" style="padding: 6px 16px; font-size: 0.85rem;">
+                        ✨ Auto-Fix All
+                    </button>
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
+
+    // Issue cards with better validation
+    const cardsHTML = issues.map((issue, idx) => {
+        // Validate issue data
+        if (!issue || !issue.file_path) {
+            console.warn(`Invalid issue at index ${idx}`, issue);
+            return ''; // Skip invalid issues
+        }
+
+        const givenLabel = issue.given_label || 'Unknown';
+        const suggestedLabel = issue.suggested_label || 'None';
+        const confidence = issue.confidence ? (issue.confidence * 100).toFixed(1) : '0.0';
+        const split = issue.split || 'unknown';
+
+        return `
+            <div class="issue-card" id="card-${idx}">
+                <input type="checkbox" 
+                       class="issue-checkbox" 
+                       style="position: absolute; top: 12px; left: 12px; width: 18px; height: 18px; cursor: pointer; z-index: 5;"
+                       onchange="toggleSelection(${idx})"
+                       id="checkbox-${idx}">
+                <div style="position: relative; background: #000; min-height: 150px; display: flex; align-items: center; justify-content: center;">
+                    <img src="/dataset/${split}/${givenLabel}/${fileName(issue.file_path)}?t=${Date.now()}" 
+                         class="issue-img" 
+                         style="max-width: 100%; max-height: 200px; object-fit: contain;"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                    <div style="display: none; color: #999; font-size: 0.8rem; padding: 20px;">Image not available</div>
+                    <span style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.8); color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 600;">${split.toUpperCase()}</span>
+                </div>
+                <div class="issue-details" style="padding: 12px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <div>
+                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Given:</span>
+                            <span style="color: var(--danger-color); font-weight: 600; margin-left: 4px;">${givenLabel}</span>
+                        </div>
+                        <div>
+                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Conf:</span>
+                            <span style="margin-left: 4px; font-weight: 500;">${confidence}%</span>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <span style="font-size: 0.75rem; color: var(--text-secondary);">Suggested:</span>
+                        <span style="color: var(--success-color); font-weight: 600; margin-left: 4px;">${suggestedLabel}</span>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Move to:</label>
+                        <select id="label-select-${idx}" style="width: 100%; padding: 6px;">
+                            ${availableClasses.map(cls => `<option value="${cls}" ${cls === suggestedLabel ? 'selected' : ''}>${cls}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="actions" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button class="btn-success" onclick="moveToSelected(${idx})" style="flex: 1; padding: 6px; font-size: 0.8rem;">Move</button>
+                        <button class="btn-danger" onclick="fixIssue(${idx}, 'delete')" style="flex: 1; padding: 6px; font-size: 0.8rem;">Delete</button>
+                        <button onclick="fixIssue(${idx}, 'ignore')" style="flex: 1; padding: 6px; font-size: 0.8rem;">Ignore</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).filter(card => card !== '').join(''); // Filter out empty cards
 
     container.innerHTML = headerHTML + cardsHTML;
 }
@@ -460,8 +465,9 @@ function updateAutoTrainingUI(state) {
                 <div>Best Val Accuracy: ${(result.val_acc * 100).toFixed(2)}%</div>
                 <div>Train Accuracy: ${(result.train_acc * 100).toFixed(2)}%</div>
                 <div style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(255,255,255,0.1);">
-                    <div>Avg Miss Rate: ${(result.avg_miss_rate * 100).toFixed(2)}%</div>
-                    <div>Avg Overkill Rate: ${(result.avg_overkill_rate * 100).toFixed(2)}%</div>
+                    <div><strong>Dataset Miss Rate:</strong> ${(result.miss_rate * 100).toFixed(2)}%</div>
+                    <div><strong>Dataset Overkill Rate:</strong> ${(result.overkill_rate * 100).toFixed(2)}%</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">(These are overall rates, not averaged per-class)</div>
                 </div>
                 
                 <div style="margin-top: 15px; max-height: 200px; overflow-y: auto;">
