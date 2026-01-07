@@ -2,21 +2,35 @@
 import os
 import copy
 import time
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import optuna
-from torch.utils.data import DataLoader
+import numpy as np
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import DataLoader
+    HAS_TORCH = True
+except ImportError:
+    HAS_TORCH = False
+
+try:
+    import optuna
+    HAS_OPTUNA = True
+except ImportError:
+    HAS_OPTUNA = False
+
 from .models import create_model
-from .data_manager import CustomImageDataset, TRAIN_DIR, VAL_DIR, TEST_DIR, transform
+from .config import TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR, MODELS_DIR
 from .utils import setup_logger
 from datetime import datetime
 
 # Setup Logger
-logger = setup_logger("pluto_trainer", "../../logs/pluto.log")
+logger = setup_logger("pluto_trainer", os.path.join(LOGS_DIR, "pluto.log"))
 
 
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if HAS_TORCH:
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+else:
+    DEVICE = "cpu"
 
 def train_epoch(model, loader, criterion, optimizer):
     model.train()
@@ -38,6 +52,8 @@ def train_epoch(model, loader, criterion, optimizer):
         total += labels.size(0)
         correct += (predicted == labels).sum().item()
         
+    if total == 0:
+        return 0.0, 0.0
     epoch_loss = running_loss / total
     epoch_acc = correct / total
     return epoch_loss, epoch_acc
@@ -59,6 +75,8 @@ def validate(model, loader, criterion):
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
             
+    if total == 0:
+        return 0.0, 0.0
     loss = running_loss / total
     acc = correct / total
     return loss, acc
@@ -103,16 +121,21 @@ def tune_hyperparameters(n_trials=5):
         print("Datasets missing")
         return None
 
-    dataset_train = CustomImageDataset(TRAIN_DIR)
-    dataset_val = CustomImageDataset(VAL_DIR)
+    from .data_manager import train_transform, val_transform
+    ds_train = CustomImageDataset(TRAIN_DIR, transform=train_transform)
+    ds_val = CustomImageDataset(VAL_DIR, transform=val_transform)
     
     def objective(trial):
         lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
         batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
         
-        params = {"lr": lr, "batch_size": batch_size}
+        params = {"lr": lr, "batch_size": batch_size, "model": "resnet18"}
+        # Tuning uses val_transform for both to keep speed up and reduce noise
+        train_ds = CustomImageDataset(TRAIN_DIR, transform=val_transform)
+        val_ds = CustomImageDataset(VAL_DIR, transform=val_transform)
+        
         # Short training for tuning
-        _, best_acc, _ = train_model(params, dataset_train, dataset_val, num_epochs=5)
+        _, best_acc, _ = train_model(params, train_ds, val_ds, num_epochs=3)
         return best_acc
 
     study = optuna.create_study(direction="maximize")
@@ -141,7 +164,7 @@ def run_automated_training(full_epochs=20, dataset_train=None, dataset_val=None)
         def objective(trial):
             lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
             batch_size = trial.suggest_categorical("batch_size", [16, 32, 64])
-            params = {"lr": lr, "batch_size": batch_size}
+            params = {"lr": lr, "batch_size": batch_size, "model": "resnet18"}
             _, best_acc, _ = train_model(params, train_ds, val_ds, num_epochs=3) # Reduced to 3 for speed
             return best_acc
 
@@ -153,11 +176,11 @@ def run_automated_training(full_epochs=20, dataset_train=None, dataset_val=None)
     print(f"Best Params: {best_params}")
     
     print("Phase 2: Full Training")
+    best_params['model'] = 'resnet18'
     model, best_val_acc, history = train_model(best_params, dataset_train, dataset_val, num_epochs=full_epochs)
     
     # Save Model
-    os.makedirs("../../models", exist_ok=True)
-    save_path = os.path.abspath("../../models/best_model.pth")
+    save_path = os.path.join(MODELS_DIR, "best_model.pth")
     torch.save(model.state_dict(), save_path)
     
     # Test if exists
@@ -222,7 +245,7 @@ def compute_metrics_from_cm(cm, classes):
             "overkill_rate": float(overkill_rate)
         }
     
-    # Overall dataset metrics (NOT average of per-class)
+    # Overall dataset metrics
     total_samples = total_tp + total_fn
     total_predictions = total_tp + total_fp
     
@@ -230,8 +253,21 @@ def compute_metrics_from_cm(cm, classes):
     overall_miss_rate = total_fn / total_samples if total_samples > 0 else 0
     overall_overkill_rate = total_fp / total_predictions if total_predictions > 0 else 0
     
+    # Balanced Acc and Macro F1
+    per_class_f1s = []
+    for m in metrics.values():
+        prec = 1.0 - m["overkill_rate"]
+        rec = m["accuracy"]
+        f1 = 2 * (prec * rec) / (prec + rec + 1e-9)
+        per_class_f1s.append(f1)
+    
+    balanced_acc = np.mean([m["accuracy"] for m in metrics.values()]) if metrics else 0.0
+    macro_f1 = np.mean(per_class_f1s) if per_class_f1s else 0.0
+    
     return metrics, {
         "accuracy": float(overall_accuracy),
+        "balanced_acc": float(balanced_acc),
+        "macro_f1": float(macro_f1),
         "miss_rate": float(overall_miss_rate),
         "overkill_rate": float(overall_overkill_rate)
     }
@@ -256,7 +292,7 @@ def compute_confusion_matrix(model, loader, num_classes):
     cm = sk_confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
     return cm
 
-def auto_explore(target_accuracy=0.90, max_time_hours=2):
+def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None):
     """
     Automatically explores multiple configurations until success or exhaustion.
     """
@@ -265,8 +301,9 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
     
     # Load datasets
     try:
-        dataset_train = CustomImageDataset(TRAIN_DIR)
-        dataset_val = CustomImageDataset(VAL_DIR)
+        from .data_manager import train_transform, val_transform, CustomImageDataset
+        dataset_train = CustomImageDataset(TRAIN_DIR, transform=train_transform)
+        dataset_val = CustomImageDataset(VAL_DIR, transform=val_transform)
         classes = dataset_train.classes
     except Exception as e:
         return {"status": "failed", "error": f"Dataset error: {str(e)}"}
@@ -278,28 +315,30 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
         max_trials_per_config = 3
         max_configs = 3
         time_budget = 3600
-        epochs_per_trial = 5 # Increased slightly
-        epochs_final = 15
+        epochs_per_trial = 5 
+        epochs_final = 100 # Increased cap for deep fine-tuning
     elif dataset_size < 10000:
         max_trials_per_config = 5
-        max_configs = 5
+        max_configs = 3
         time_budget = 7200
-        epochs_per_trial = 3
-        epochs_final = 10
+        epochs_per_trial = 5
+        epochs_final = 100 # Increased cap for deep fine-tuning
     else:
         max_trials_per_config = 8
-        max_configs = 6
+        max_configs = 3
         time_budget = 21600
-        epochs_per_trial = 2
-        epochs_final = 10
+        epochs_per_trial = 3
+        epochs_final = 100 # Increased cap for deep fine-tuning
     
-    # Configs (kept same)
+    # Focusing exclusively on ResNet18 as requested
     exploration_configs = [
-        {"name": "ResNet18 + Standard HP", "lr_range": [1e-5, 1e-2], "batch_size_options": [16, 32, 64], "weight_decay": [1e-5, 1e-3]},
-        {"name": "ResNet18 + High Regularization", "lr_range": [1e-6, 1e-3], "batch_size_options": [16, 32], "weight_decay": [1e-4, 1e-2]},
-        {"name": "ResNet18 + Low LR", "lr_range": [1e-6, 1e-4], "batch_size_options": [32, 64], "weight_decay": [1e-5, 1e-4]},
-        {"name": "ResNet18 + High LR", "lr_range": [1e-4, 1e-2], "batch_size_options": [16, 32], "weight_decay": [1e-5, 1e-3]},
-        {"name": "ResNet18 + Conservative", "lr_range": [5e-5, 5e-4], "batch_size_options": [32], "weight_decay": [1e-4, 1e-3]},
+        {
+            "name": "ResNet18 (Deep Optimization)", 
+            "model": "resnet18", 
+            "lr_range": [1e-5, 5e-3], 
+            "batch_size_options": [16, 32, 64], 
+            "weight_decay": [1e-5, 1e-2]
+        },
     ]
     
     start_time = time.time()
@@ -319,10 +358,20 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
             batch_size = trial.suggest_categorical("batch_size", config["batch_size_options"])
             weight_decay = trial.suggest_float("weight_decay", *config["weight_decay"], log=True)
             
-            params = {"lr": lr, "batch_size": batch_size, "weight_decay": weight_decay}
+            params = {"lr": lr, "batch_size": batch_size, "weight_decay": weight_decay, "model": config["model"]}
             
             # Short training for exploration
             model, best_acc, history = train_model(params, dataset_train, dataset_val, num_epochs=epochs_per_trial)
+            
+            if progress_callback:
+                progress_callback({
+                    "status": "exploring",
+                    "current_config": config_idx,
+                    "total_configs": min(len(exploration_configs), max_configs),
+                    "best_acc": best_overall["val_acc"] if best_overall else 0.0,
+                    "iteration": trial.number,
+                    "config_name": config["name"]
+                })
             return best_acc
         
         study = optuna.create_study(direction="maximize")
@@ -363,16 +412,14 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
         # Track best (consider miss rate too in future, but acc for now)
         if best_overall is None or val_acc_final > best_overall["val_acc"]:
             best_overall = result
-            os.makedirs("../../models", exist_ok=True)
-            
             # Save Versioned Model
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             versioned_name = f"model_{timestamp}_acc{val_acc_final:.4f}.pth"
-            versioned_path = os.path.abspath(f"../../models/{versioned_name}")
+            versioned_path = os.path.join(MODELS_DIR, versioned_name)
             torch.save(model.state_dict(), versioned_path)
             
-            # Update 'best_model.pth' symlink-like behavior (copy/overwrite)
-            save_path = os.path.abspath("../../models/best_model.pth")
+            # Update 'best_model.pth'
+            save_path = os.path.join(MODELS_DIR, "best_model.pth")
             torch.save(model.state_dict(), save_path)
             
             best_overall["model_path"] = save_path
@@ -393,7 +440,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
         # Save metrics to JSON
         try:
             import json
-            metrics_path = os.path.abspath("../../models/metrics.json")
+            metrics_path = os.path.join(MODELS_DIR, "metrics.json")
             with open(metrics_path, 'w') as f:
                 # helper to handle numpy types
                 def default(o):
@@ -405,11 +452,16 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
                     elif isinstance(o, (np.ndarray,)): return o.tolist()
                     return str(o)
                     
-                json.dump(best_overall, f, indent=4, default=default)
-            logger.info(f"  💾 Metrics saved to {metrics_path}")
+                summary = {
+                    "status": "success" if val_acc_final >= target_accuracy else "partial",
+                    "best_result": best_overall,
+                    "all_results": all_results
+                }
+                json.dump(summary, f, indent=4, default=default)
+            logger.info(f"  [METRICS] Saved to {metrics_path}")
             
             # Log per-class metrics
-            logger.info("\n  🔍 Per-Class Performance:")
+            logger.info("\n  [ANALYSIS] Per-Class Performance:")
             logger.info(f"  {'Class':<20} {'Acc':<10} {'Miss':<10} {'Overkill':<10}")
             logger.info("-" * 55)
             for cls, metrics in best_overall['per_class_metrics'].items():
@@ -424,7 +476,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
         if len(all_results) >= 3:
             recent = [r["val_acc"] for r in all_results[-3:]]
             if max(recent) - min(recent) < 0.02:
-                print(f"\n📉 No significant improvement. Stopping.")
+                print(f"\n[INFO] No significant improvement. Stopping.")
                 break
     
     return {
@@ -438,9 +490,17 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2):
 def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs=10):
     """Modified train_model to support weight_decay AND Learning Rate Scheduler."""
     num_classes = len(dataset_train.classes)
-    model = create_model(num_classes).to(DEVICE)
+    model_name = params.get("model", "resnet18")
+    model = create_model(num_classes, model_name=model_name).to(DEVICE)
     
-    criterion = nn.CrossEntropyLoss()
+    # Calculate class weights for imbalanced data
+    all_labels = dataset_train.labels
+    counts = np.bincount(all_labels)
+    weights = 1.0 / (counts + 1e-6)
+    weights = weights / weights.sum() * len(counts)
+    class_weights = torch.FloatTensor(weights).to(DEVICE)
+    
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.Adam(
         model.parameters(),
         lr=params['lr'],
@@ -459,6 +519,11 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
     best_model_wts = copy.deepcopy(model.state_dict())
     
     history = []
+    
+    # Early Stopping state
+    patience = 5
+    trigger_times = 0
+    best_val_loss = float('inf')
     
     for epoch in range(num_epochs):
         train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer)
@@ -479,6 +544,16 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
         if val_acc > best_acc:
             best_acc = val_acc
             best_model_wts = copy.deepcopy(model.state_dict())
+            
+        # Early Stopping check
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            trigger_times = 0
+        else:
+            trigger_times += 1
+            if trigger_times >= patience:
+                logger.info(f"Early stopping at epoch {epoch+1}")
+                break
             
     model.load_state_dict(best_model_wts)
     return model, best_acc, history

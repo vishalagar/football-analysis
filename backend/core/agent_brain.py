@@ -1,5 +1,7 @@
-
 import ollama
+import json
+import re
+import numpy as np
 from .data_manager import detect_issues, get_dataset_stats
 
 def query_llama3(prompt):
@@ -23,8 +25,7 @@ def analyze_situation_and_decide():
     # 1. Get Stats
     stats = get_dataset_stats()
     
-    # 2. Check for Issues (Simplified check first to save time, or full check)
-    # For this agent, we'll do a full check.
+    # 2. Check for Issues
     issues = detect_issues()
     
     if isinstance(issues, dict) and "error" in issues:
@@ -62,10 +63,26 @@ def analyze_situation_and_decide():
     print("Agent: Asking Llama3...")
     response_text = query_llama3(prompt)
     
-    # Basic parsing if Llama returns Markdown
-    import json
-    import re
-    
+    # 3. Rule-based Fallback if AI fails
+    if "Error communicating with Ollama" in response_text:
+        print("[INFO] AI unavailable, using rule-based fallback.")
+        if num_issues > 5:
+            return {
+                "analysis": "Rule-based analysis: Significant label issues detected. Cleaning required before training.",
+                "recommended_action": "data_cleaning",
+                "issues_list": issues,
+                "raw_issues_count": num_issues,
+                "is_fallback": True
+            }
+        else:
+            return {
+                "analysis": "Rule-based analysis: Dataset looks healthy with minimal issues. Recommended to start training.",
+                "recommended_action": "start_training",
+                "issues_list": issues,
+                "raw_issues_count": num_issues,
+                "is_fallback": True
+            }
+
     try:
         # Extract JSON using regex
         match = re.search(r'\{.*\}', response_text, re.DOTALL)
@@ -100,14 +117,14 @@ def diagnose_after_exploration(exploration_results):
     # Compute per-class accuracy from confusion matrix
     cm = np.array(best["confusion_matrix"])
     per_class_acc = {}
-    class_names = ["Class_" + str(i) for i in range(len(cm))]  # Will be replaced with actual names
+    class_names = list(best["per_class_metrics"].keys()) if "per_class_metrics" in best else ["Class_" + str(i) for i in range(len(cm))]
     
-    for i in range(len(cm)):
+    for i, name in enumerate(class_names):
         total = cm[i].sum()
         if total > 0:
-            per_class_acc[class_names[i]] = cm[i, i] / total
+            per_class_acc[name] = cm[i, i] / total
         else:
-            per_class_acc[class_names[i]] = 0.0
+            per_class_acc[name] = 0.0
     
     # Find problematic classes (< 60% accuracy)
     problematic_classes = [cls for cls, acc in per_class_acc.items() if acc < 0.6]
@@ -123,6 +140,8 @@ def diagnose_after_exploration(exploration_results):
     Exploration Summary:
     - Configurations tried: {len(all_results)}
     - Best validation accuracy: {best['val_acc']:.2%}
+    - Balanced Accuracy: {best.get('balanced_acc', 0.0):.2%}
+    - Macro F1 Score: {best.get('macro_f1', 0.0):.2%}
     - Best training accuracy: {best['train_acc']:.2%}
     - Train-Val gap: {train_val_gap:.2%}
     - Target accuracy: 90%

@@ -1,255 +1,191 @@
-
 const API_BASE = "/api";
 
 // Global state
 let selectedIssues = new Set();
 let availableClasses = [];
 let allIssues = [];
+let isTraining = false;
 
+/**
+ * Initial Stats & Environment Setup
+ */
 async function fetchStats() {
     try {
         const res = await fetch(`${API_BASE}/status`);
         const data = await res.json();
         renderStats(data.dataset_stats);
-        updateTrainingState(data.training_state);
+
+        // Populate available classes for dropdowns
+        const clsRes = await fetch(`${API_BASE}/get_classes`);
+        const clsData = await clsRes.json();
+        availableClasses = clsData.classes || [];
+        updateBatchDropdown();
+
+        // Sync training state if already running
+        if (data.training_state && data.training_state.status !== "idle") {
+            startPollingStatus();
+        }
     } catch (e) {
-        console.error("Failed to fetch stats", e);
+        console.error("Dashboard out of sync:", e);
+        document.getElementById('system-status').innerText = "System Offline";
     }
 }
 
 function renderStats(stats) {
     const container = document.getElementById('stats-container');
-    let html = '';
+    if (!container) return;
 
+    let html = '';
     for (const [split, info] of Object.entries(stats)) {
         html += `
             <div class="stat-item">
-                <span style="text-transform: capitalize;">${split}</span>
-                <span>${info.count} imgs</span>
+                <span style="text-transform: capitalize;">${split} Set</span>
+                <span>${info.count} samples</span>
             </div>
         `;
     }
-    container.innerHTML = html;
+    container.innerHTML = html || '<p>No data found.</p>';
 }
 
-function updateTrainingState(state) {
-    const logs = document.getElementById('training-logs');
-    if (state.status === "running") {
-        document.getElementById('training-section').style.display = 'block';
-        logs.innerHTML = `<div>Status: Running...</div>`;
-        document.getElementById('train-btn').disabled = true;
-        document.getElementById('train-btn').innerText = "Training...";
-    } else if (state.status === "completed") {
-        document.getElementById('training-section').style.display = 'block';
-        logs.innerHTML = `
-            <div style="color: var(--success-color)">Training Completed!</div>
-            <div>Best Val Acc: ${(state.result.val_accuracy * 100).toFixed(2)}%</div>
-            ${state.result.test_accuracy ? `<div>Test Acc: ${(state.result.test_accuracy * 100).toFixed(2)}%</div>` : ''}
-            <div>Best Params: ${JSON.stringify(state.result.best_params)}</div>
-        `;
-        document.getElementById('train-btn').disabled = false;
-        document.getElementById('train-btn').innerText = "Restart Training";
-    }
+function updateBatchDropdown() {
+    const select = document.getElementById('batch-label-select');
+    if (!select) return;
+
+    // Save current value
+    const curVal = select.value;
+    select.innerHTML = '<option value="">Move to...</option>' +
+        availableClasses.map(cls => `<option value="${cls}">${cls}</option>`).join('');
+    select.value = curVal;
 }
 
+/**
+ * Intelligent Agent Integration
+ */
 async function triggerAnalysis() {
     const output = document.getElementById('agent-output');
-    output.innerHTML = "🤔 Llama3 is thinking... (This may take a moment)";
+    const btn = document.getElementById('analyze-btn');
+
+    output.classList.add('pulse');
+    output.innerHTML = "<b>Agent is analyzing dataset gradients and label consistency...</b>";
+    btn.disabled = true;
 
     try {
         const res = await fetch(`${API_BASE}/analyze`);
+        if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`Server Error (${res.status}): ${errBody.slice(0, 100)}`);
+        }
         const decision = await res.json();
-
         displayAgentDecision(decision);
     } catch (e) {
-        output.innerHTML = `Error: ${e.message}`;
+        output.innerHTML = `<span style="color: var(--danger-color)">Analysis Error: ${e.message}</span>`;
+    } finally {
+        output.classList.remove('pulse');
+        btn.disabled = false;
     }
 }
 
 function displayAgentDecision(decision) {
-    const output = document.getElementById('agent-output');
-    const cleaningSection = document.getElementById('cleaning-section');
-    const trainingSection = document.getElementById('training-section');
+    const container = document.getElementById('agent-output');
+    const cleaningSec = document.getElementById('cleaning-section');
+    const trainingSec = document.getElementById('training-section');
 
-    // reset visibility
-    cleaningSection.style.display = 'none';
-    trainingSection.style.display = 'none';
-
-    output.innerHTML = `
-        <strong>Analysis:</strong> ${decision.analysis || decision.decision} <br><br>
-        <strong>Recommendation:</strong> <span style="color: var(--accent-color)">${decision.recommended_action}</span>
-    `;
-
-    if (decision.recommended_action === "data_cleaning") {
-        cleaningSection.style.display = 'block';
-        renderIssues(decision.issues_list);
-    } else {
-        // Assume training or tuning
-        trainingSection.style.display = 'block';
-    }
-}
-
-async function renderIssues(issues) {
-    const container = document.getElementById('issues-container');
-    document.getElementById('issue-count').innerText = `${issues.length} Issues found`;
-
-    allIssues = issues;
-    selectedIssues.clear();
-
-    // Fetch available classes
-    try {
-        const res = await fetch(`${API_BASE}/get_classes`);
-        const data = await res.json();
-        availableClasses = data.classes || [];
-    } catch (e) {
-        console.error('Failed to fetch classes', e);
-        availableClasses = [];
-    }
-
-    if (issues.length === 0) {
-        container.innerHTML = `
-            <div style="text-align: center; padding: 60px 20px; background: rgba(15, 23, 42, 0.4); border-radius: 12px; margin-top: 20px;">
-                <h3 style="color: var(--success-color); margin-bottom: 10px;">🎉 No Issues Found!</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 20px;">Dataset looks clean!</p>
-                <button class="btn-primary" onclick="forceShowTraining()" style="padding: 12px 24px; font-size: 1rem;">Start Training Now</button>
-            </div>
-        `;
-        return;
-    }
-
-    // Batch actions header - SIMPLE, non-sticky
-    const headerHTML = `
-        <div style="background: rgba(30, 41, 59, 0.8); padding: 12px 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.1);">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <button class="btn-primary" onclick="selectAll()" style="padding: 6px 12px; font-size: 0.85rem;">Select All</button>
-                    <button onclick="clearSelection()" style="padding: 6px 12px; font-size: 0.85rem;">Clear</button>
-                    <span id="selected-count" style="color: var(--accent-color); font-weight: 600; margin-left: 8px; font-size: 0.9rem;">0 selected</span>
-                </div>
-                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                    <select id="batch-label-select" style="padding: 6px 10px; font-size: 0.85rem; min-width: 120px;">
-                        <option value="">-- Move To --</option>
-                        ${availableClasses.map(cls => `<option value="${cls}">${cls}</option>`).join('')}
-                    </select>
-                    <button class="btn-success" onclick="batchMove()" style="padding: 6px 14px; font-size: 0.85rem;">Move</button>
-                    <button class="btn-danger" onclick="batchDelete()" style="padding: 6px 14px; font-size: 0.85rem;">Delete</button>
-                    <div style="width: 1px; height: 20px; background: rgba(255,255,255,0.2); margin: 0 4px;"></div>
-                    <button class="btn-magic" onclick="autoFixAll()" style="padding: 6px 16px; font-size: 0.85rem;">
-                        ✨ Auto-Fix All
-                    </button>
-                </div>
-            </div>
+    container.innerHTML = `
+        <div style="margin-bottom: 12px;">
+            <b style="color: var(--accent-color)">AGENT INSIGHT:</b> ${decision.analysis || decision.decision}
+        </div>
+        <div style="padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 8px;">
+            <b style="color: var(--success-color)">RECOMMENDATION:</b> ${decision.recommended_action.replace('_', ' ')}
         </div>
     `;
 
-    // Issue cards with better validation
-    const cardsHTML = issues.map((issue, idx) => {
-        // Validate issue data
-        if (!issue || !issue.file_path) {
-            console.warn(`Invalid issue at index ${idx}`, issue);
-            return ''; // Skip invalid issues
-        }
+    if (decision.recommended_action === "data_cleaning") {
+        cleaningSec.style.display = 'block';
+        cleaningSec.scrollIntoView({ behavior: 'smooth' });
+        renderIssues(decision.issues_list);
+    } else {
+        trainingSec.style.display = 'block';
+        trainingSec.scrollIntoView({ behavior: 'smooth' });
+    }
+}
 
-        const givenLabel = issue.given_label || 'Unknown';
-        const suggestedLabel = issue.suggested_label || 'None';
-        const confidence = issue.confidence ? (issue.confidence * 100).toFixed(1) : '0.0';
-        const split = issue.split || 'unknown';
+/**
+ * Data Cleaning & Batch Logic
+ */
+function renderIssues(issues) {
+    allIssues = issues;
+    const container = document.getElementById('issues-container');
+    const countPill = document.getElementById('issue-count-pill');
 
-        return `
-            <div class="issue-card" id="card-${idx}">
-                <input type="checkbox" 
-                       class="issue-checkbox" 
-                       style="position: absolute; top: 12px; left: 12px; width: 18px; height: 18px; cursor: pointer; z-index: 5;"
-                       onchange="toggleSelection(${idx})"
-                       id="checkbox-${idx}">
-                <div style="position: relative; background: #000; min-height: 150px; display: flex; align-items: center; justify-content: center;">
-                    <img src="/dataset/${split}/${givenLabel}/${fileName(issue.file_path)}?t=${Date.now()}" 
-                         class="issue-img" 
-                         style="max-width: 100%; max-height: 200px; object-fit: contain;"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                    <div style="display: none; color: #999; font-size: 0.8rem; padding: 20px;">Image not available</div>
-                    <span style="position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.8); color: #fff; padding: 3px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 600;">${split.toUpperCase()}</span>
-                </div>
-                <div class="issue-details" style="padding: 12px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <div>
-                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Given:</span>
-                            <span style="color: var(--danger-color); font-weight: 600; margin-left: 4px;">${givenLabel}</span>
-                        </div>
-                        <div>
-                            <span style="font-size: 0.75rem; color: var(--text-secondary);">Conf:</span>
-                            <span style="margin-left: 4px; font-weight: 500;">${confidence}%</span>
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 10px;">
-                        <span style="font-size: 0.75rem; color: var(--text-secondary);">Suggested:</span>
-                        <span style="color: var(--success-color); font-weight: 600; margin-left: 4px;">${suggestedLabel}</span>
-                    </div>
-                    <div style="margin-bottom: 10px;">
-                        <label style="font-size: 0.75rem; color: var(--text-secondary); display: block; margin-bottom: 4px;">Move to:</label>
-                        <select id="label-select-${idx}" style="width: 100%; padding: 6px;">
-                            ${availableClasses.map(cls => `<option value="${cls}" ${cls === suggestedLabel ? 'selected' : ''}>${cls}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="actions" style="display: flex; gap: 6px; flex-wrap: wrap;">
-                        <button class="btn-success" onclick="moveToSelected(${idx})" style="flex: 1; padding: 6px; font-size: 0.8rem;">Move</button>
-                        <button class="btn-danger" onclick="fixIssue(${idx}, 'delete')" style="flex: 1; padding: 6px; font-size: 0.8rem;">Delete</button>
-                        <button onclick="fixIssue(${idx}, 'ignore')" style="flex: 1; padding: 6px; font-size: 0.8rem;">Ignore</button>
-                    </div>
-                </div>
+    countPill.innerText = issues.length;
+
+    if (issues.length === 0) {
+        container.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; padding: 40px; border: 2px dashed var(--card-border); border-radius: 20px;">
+                <h3 style="color: var(--success-color)">✨ Dataset is Clean!</h3>
+                <p style="color: var(--text-secondary)">No further issues detected by the agent.</p>
+                <button class="btn-primary" onclick="forceShowTraining()" style="margin: 20px auto;">Continue to Benchmarking</button>
             </div>
         `;
-    }).filter(card => card !== '').join(''); // Filter out empty cards
-
-    container.innerHTML = headerHTML + cardsHTML;
-}
-
-function forceShowTraining() {
-    document.getElementById('cleaning-section').style.display = 'none';
-    document.getElementById('training-section').style.display = 'block';
-
-    // Also scroll to it
-    document.getElementById('training-section').scrollIntoView({ behavior: 'smooth' });
-}
-
-function toggleSelection(idx) {
-    const issue = allIssues[idx];
-    if (!issue) return;
-
-    if (selectedIssues.has(issue.file_path)) {
-        selectedIssues.delete(issue.file_path);
-    } else {
-        selectedIssues.add(issue.file_path);
+        return;
     }
-    document.getElementById('selected-count').innerText = `${selectedIssues.size} selected`;
+
+    container.innerHTML = issues.map((issue, idx) => `
+        <div class="issue-card" id="card-${idx}">
+            <div style="position: relative;">
+                <input type="checkbox" class="issue-checkbox" 
+                       onchange="updateSelection(${idx}, this.checked)" 
+                       ${selectedIssues.has(issue.file_path) ? 'checked' : ''}
+                       style="position: absolute; top: 15px; left: 15px; z-index: 10;">
+                <img src="/dataset/${issue.split}/${issue.given_label}/${fileName(issue.file_path)}?t=${Date.now()}" 
+                     class="issue-img" loading="lazy">
+            </div>
+            <div class="issue-details">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center;">
+                    <span class="badge ${issue.issue_type}">${issue.issue_type.replace('_', ' ').toUpperCase()}</span>
+                    <span style="font-size: 0.75rem; color: var(--accent-color)">${(issue.confidence * 100).toFixed(0)}% Conf.</span>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px;">Current: <span style="color: var(--danger-color); font-weight: 600;">${issue.given_label}</span></p>
+                    <p style="font-size: 0.8rem; color: var(--text-secondary);">Suggest: <span style="color: ${issue.suggested_label === 'delete' ? 'var(--danger-color)' : 'var(--success-color)'}; font-weight: 600;">${issue.suggested_label.toUpperCase()}</span></p>
+                </div>
+                <select id="select-${idx}" style="margin-bottom: 12px;">
+                    ${availableClasses.map(cls => `<option value="${cls}" ${cls === issue.suggested_label ? 'selected' : ''}>${cls}</option>`).join('')}
+                </select>
+                <div class="actions">
+                    <button class="btn-success" onclick="applyFixSingle(${idx}, 'move')" style="padding: 6px;">Move</button>
+                    <button class="btn-danger" onclick="applyFixSingle(${idx}, 'delete')" style="padding: 6px;">Delete</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
 }
 
-function selectAll() {
+function fileName(path) {
+    return path.split(/[\\/]/).pop();
+}
+
+function updateSelection(idx, isChecked) {
+    const path = allIssues[idx].file_path;
+    if (isChecked) selectedIssues.add(path);
+    else selectedIssues.delete(path);
+}
+
+function toggleSelectAll() {
+    const masterCb = document.getElementById('select-all-issues');
+    const cbs = document.querySelectorAll('.issue-checkbox');
+
     selectedIssues.clear();
-    allIssues.forEach((issue, idx) => {
-        selectedIssues.add(issue.file_path);
-        const cb = document.getElementById(`checkbox-${idx}`);
-        if (cb) cb.checked = true;
+    cbs.forEach((cb, idx) => {
+        cb.checked = masterCb.checked;
+        if (masterCb.checked) selectedIssues.add(allIssues[idx].file_path);
     });
-    document.getElementById('selected-count').innerText = `${selectedIssues.size} selected`;
 }
 
-function clearSelection() {
-    selectedIssues.clear();
-    document.querySelectorAll('.issue-checkbox').forEach(cb => cb.checked = false);
-    document.getElementById('selected-count').innerText = '0 selected';
-}
-
-async function batchMove() {
+async function applyBatchFix() {
     const targetLabel = document.getElementById('batch-label-select').value;
-    if (!targetLabel) {
-        alert('Please select a target label');
-        return;
-    }
-    if (selectedIssues.size === 0) {
-        alert('No issues selected');
-        return;
-    }
+    if (selectedIssues.size === 0) return alert("Select items first!");
+    if (!targetLabel) return alert("Select a target move label!");
 
     try {
         const res = await fetch(`${API_BASE}/batch_fix`, {
@@ -263,99 +199,42 @@ async function batchMove() {
         });
 
         if (res.ok) {
-            // Remove cards for moved items
-            allIssues = allIssues.filter(issue => !selectedIssues.has(issue.file_path));
+            allIssues = allIssues.filter(i => !selectedIssues.has(i.file_path));
             selectedIssues.clear();
             renderIssues(allIssues);
             fetchStats();
         }
     } catch (e) {
-        alert('Batch move failed: ' + e.message);
-    }
-}
-
-async function batchDelete() {
-    if (selectedIssues.size === 0) {
-        alert('No issues selected');
-        return;
-    }
-    if (!confirm(`Delete ${selectedIssues.size} images?`)) return;
-
-    try {
-        const res = await fetch(`${API_BASE}/batch_fix`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                file_paths: Array.from(selectedIssues),
-                action: 'delete'
-            })
-        });
-
-        if (res.ok) {
-            allIssues = allIssues.filter(issue => !selectedIssues.has(issue.file_path));
-            selectedIssues.clear();
-            renderIssues(allIssues);
-            fetchStats();
-        }
-    } catch (e) {
-        alert('Batch delete failed: ' + e.message);
+        alert("Batch fix failed: " + e.message);
     }
 }
 
 async function autoFixAll() {
     if (allIssues.length === 0) return;
-    if (!confirm(`Automatically accept suggestions for all ${allIssues.length} issues?\n\nThis will move files to their 'Suggested' folders.`)) return;
-
-    // We need to construct a batch request where new_label = suggested_label for each item
-    // Since our backend /batch_fix takes a single new_label for all files (for now), 
-    // we actually have to group them by suggested label OR call fix_issue in parallel.
-    // Let's call fix_issue in parallel for now as it's easier to implement without changing backend again.
-    // Limit concurrency to avoid browser/server overload.
-
-    // Show loading state
-    const originalText = event.target.innerText;
-    event.target.innerText = "Fixing...";
-    event.target.disabled = true;
+    if (!confirm(`Apply all ${allIssues.length} logical suggestions?`)) return;
 
     try {
-        const promises = allIssues.map(issue =>
-            fetch(`${API_BASE}/fix_issue`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    file_path: issue.file_path,
-                    action: 'move',
-                    new_label: issue.suggested_label
-                })
-            })
-        );
+        const items = allIssues.map(i => ({ file_path: i.file_path, new_label: i.suggested_label }));
+        const res = await fetch(`${API_BASE}/batch_fix_suggestions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items })
+        });
 
-        await Promise.all(promises);
-
-        // Refresh
-        allIssues = []; // Cleared
-        renderIssues([]);
-        fetchStats();
-
+        if (res.ok) {
+            allIssues = [];
+            selectedIssues.clear();
+            renderIssues([]);
+            fetchStats();
+        }
     } catch (e) {
-        alert("Auto-fix failed: " + e.message);
-        event.target.innerText = originalText;
-        event.target.disabled = false;
+        alert("Auto-fix failed");
     }
 }
 
-function moveToSelected(idx) {
-    const selectedLabel = document.getElementById(`label-select-${idx}`).value;
-    if (!selectedLabel) {
-        alert("Please select a label");
-        return;
-    }
-    fixIssue(idx, 'move', selectedLabel);
-}
-
-async function fixIssue(idx, action, newLabel = null) {
+async function applyFixSingle(idx, action) {
     const issue = allIssues[idx];
-    if (!issue) return;
+    const newLabel = document.getElementById(`select-${idx}`).value;
 
     try {
         const res = await fetch(`${API_BASE}/fix_issue`, {
@@ -365,180 +244,112 @@ async function fixIssue(idx, action, newLabel = null) {
         });
 
         if (res.ok) {
-            // Remove from allIssues and re-render
-            allIssues = allIssues.filter((_, i) => i !== idx);
+            allIssues.splice(idx, 1);
+            selectedIssues.delete(issue.file_path);
             renderIssues(allIssues);
             fetchStats();
         }
     } catch (e) {
-        alert("Failed to apply fix: " + e.message);
+        alert("Action failed");
     }
 }
 
-async function startTraining() {
-    try {
-        // Use new auto-training endpoint
-        await fetch(`${API_BASE}/start_auto_training`, { method: 'POST' });
-        document.getElementById('train-btn').disabled = true;
-        document.getElementById('train-btn').innerText = "Auto-Exploring...";
-        document.getElementById('training-logs').innerHTML = "🚀 Starting intelligent auto-exploration...<br>This will try multiple configurations automatically.";
+function forceShowTraining() {
+    const sec = document.getElementById('training-section');
+    sec.style.display = 'block';
+    sec.scrollIntoView({ behavior: 'smooth' });
+}
 
-        // Poll for auto-training updates
-        const interval = setInterval(async () => {
+/**
+ * AutoML Benchmarking Logic
+ */
+async function startTraining() {
+    if (isTraining) return;
+
+    try {
+        await fetch(`${API_BASE}/start_auto_training`, { method: 'POST' });
+        startPollingStatus();
+    } catch (e) {
+        alert("Could not initiate benchmarking.");
+    }
+}
+
+function startPollingStatus() {
+    isTraining = true;
+    const btn = document.getElementById('train-btn');
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Benchmarking...`;
+
+    const interval = setInterval(async () => {
+        try {
             const res = await fetch(`${API_BASE}/auto_training_status`);
             const state = await res.json();
 
             updateAutoTrainingUI(state);
 
-            if (state.status === 'completed' || state.status === 'failed' || state.status === 'waiting_user') {
+            if (["completed", "failed", "waiting_user"].includes(state.status)) {
                 clearInterval(interval);
+                isTraining = false;
+                btn.disabled = false;
+                btn.innerText = "Start Multi-Model Benchmark";
+                fetchStats();
             }
-        }, 3000);  // Poll every 3 seconds
-
-    } catch (e) {
-        alert("Failed to start auto-training");
-    }
+        } catch (e) {
+            clearInterval(interval);
+            isTraining = false;
+        }
+    }, 2000);
 }
 
 function updateAutoTrainingUI(state) {
     const logs = document.getElementById('training-logs');
-    const btn = document.getElementById('train-btn');
+    const leaderboard = document.getElementById('leaderboard-content');
 
     if (state.status === "exploring") {
         logs.innerHTML = `
-            <div style="color: var(--accent-color)">🔍 Auto-Exploration in Progress...</div>
-            <div>Configuration: ${state.current_config + 1} / ${state.total_configs || '?'}</div>
-            <div>Best Accuracy So Far: ${(state.best_acc * 100).toFixed(2)}%</div>
-            <div>Iteration: ${state.iteration}</div>
-            <div style="margin-top: 10px; font-size: 0.7rem; color: var(--text-secondary);">
-                Trying different hyperparameters automatically...<br>
-                This may take 30-60 minutes depending on dataset size.
+            <div style="color: var(--accent-color); font-weight: 700; margin-bottom: 10px;">🚀 AUTO-BENCHMARKING ACTIVE</div>
+            <div class="progress-bar-container" style="height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-bottom: 15px; overflow: hidden;">
+                <div style="width: ${(state.current_config / state.total_configs) * 100}%; height: 100%; background: var(--accent-color);"></div>
+            </div>
+            <p>Evaluating Architecture <b>${state.current_config + 1}</b> / ${state.total_configs}</p>
+            <p>Current Accuracy: <b>${(state.best_acc * 100).toFixed(2)}%</b></p>
+            <div style="margin-top: 20px; font-size: 0.75rem; color: var(--text-secondary);">
+                Fine-tuning hyperparameters using Optuna (Trial ${state.iteration})...
             </div>
         `;
-        btn.disabled = true;
-        btn.innerText = "Exploring...";
-    } else if (state.status === "diagnosing") {
-        logs.innerHTML = `
-            <div style="color: var(--warning-color)">🤖 AI Agent Diagnosing...</div>
-            <div>Analyzing why training underperformed...</div>
-        `;
-    } else if (state.status === "waiting_user") {
-        // Show diagnosis and ask user
-        const diagnosis = state.diagnosis;
-        logs.innerHTML = `
-            <div style="color: var(--warning-color)">⚠️ Agent Needs Your Help</div>
-            <div style="margin-top: 10px;">
-                <strong>Diagnosis:</strong> ${diagnosis.diagnosis}
-            </div>
-            <div style="margin-top: 5px;">
-                <strong>Reasoning:</strong> ${diagnosis.reasoning}
-            </div>
-            <div style="margin-top: 10px;">
-                <strong>Problematic Classes:</strong> ${diagnosis.problematic_classes.join(', ')}
-            </div>
-            <div style="margin-top: 15px; padding: 10px; background: rgba(255,193,7,0.1); border-left: 3px solid var(--warning-color);">
-                <strong>Recommended Action:</strong> ${diagnosis.recommended_action}<br>
-                Please clean the data and click "Re-clean Complete" below.
-            </div>
-        `;
-
-        // Add action buttons
-        const btnContainer = document.createElement('div');
-        btnContainer.style.marginTop = '15px';
-        btnContainer.style.display = 'flex';
-        btnContainer.style.gap = '10px';
-
-        btnContainer.innerHTML = `
-            <button class="btn-primary" onclick="window.location.reload()">Go Back to Clean Data</button>
-            <button class="btn-success" onclick="userFeedback('recleaned')">Re-clean Complete</button>
-            <button onclick="userFeedback('satisfied')">I'm Satisfied</button>
-        `;
-        logs.appendChild(btnContainer);
-
-        btn.disabled = false;
-        btn.innerText = "Waiting for User";
     } else if (state.status === "completed") {
-        const result = state.exploration_results?.best_result;
+        const best = state.exploration_results.best_result;
         logs.innerHTML = `
-            <div style="color: var(--success-color)">✅ Auto-Training Complete!</div>
-            ${result ? `
-                <div>Best Val Accuracy: ${(result.val_acc * 100).toFixed(2)}%</div>
-                <div>Train Accuracy: ${(result.train_acc * 100).toFixed(2)}%</div>
-                <div style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(255,255,255,0.1);">
-                    <div><strong>Dataset Miss Rate:</strong> ${(result.miss_rate * 100).toFixed(2)}%</div>
-                    <div><strong>Dataset Overkill Rate:</strong> ${(result.overkill_rate * 100).toFixed(2)}%</div>
-                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">(These are overall rates, not averaged per-class)</div>
-                </div>
-                
-                <div style="margin-top: 15px; max-height: 200px; overflow-y: auto;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.2); text-align: left;">
-                                <th style="padding: 4px;">Class</th>
-                                <th style="padding: 4px;">Acc</th>
-                                <th style="padding: 4px;">Miss</th>
-                                <th style="padding: 4px;">Overkill</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${Object.entries(result.per_class_metrics).map(([cls, m]) => `
-                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                    <td style="padding: 4px; color: var(--accent-color);">${cls}</td>
-                                    <td style="padding: 4px;">${(m.accuracy * 100).toFixed(0)}%</td>
-                                    <td style="padding: 4px; color: ${m.miss_rate > 0.1 ? 'var(--danger-color)' : 'inherit'}">
-                                        ${(m.miss_rate * 100).toFixed(0)}%
-                                    </td>
-                                    <td style="padding: 4px; color: ${m.overkill_rate > 0.1 ? 'var(--warning-color)' : 'inherit'}">
-                                        ${(m.overkill_rate * 100).toFixed(0)}%
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div style="margin-top:10px; color: var(--text-secondary); font-size: 0.8rem;">
-                    Config: ${result.config_name}<br>
-                    Trained for ${result.epochs_trained} epochs
-                </div>
-                <div style="margin-top:5px; font-size: 0.7rem;">Model: ${fileName(result.model_path)}</div>
-            ` : '<div>Training completed successfully!</div>'}
+            <div style="color: var(--success-color); font-weight: 700;">✅ BENCHMARK COMPLETE</div>
+            <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Acc</small></h1>
+            <p><b>Winner:</b> ${best.config_name}</p>
+            <div style="margin-top: 15px; font-size: 0.8rem;">
+                <p>Train Acc: ${(best.train_acc * 100).toFixed(1)}%</p>
+                <p>Miss Rate: ${(best.miss_rate * 100).toFixed(1)}%</p>
+            </div>
         `;
-        btn.disabled = false;
-        btn.innerText = "Train Again";
+
+        // Update Leaderboard
+        const history = state.exploration_results.history || [];
+        leaderboard.innerHTML = history.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name}</span>
+                <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
+            </div>
+        `).join('') || 'Evaluation results shown here.';
     } else if (state.status === "failed") {
-        logs.innerHTML = `
-            <div style="color: var(--danger-color)">❌ Training Failed</div>
-            <div>${state.error || 'Unknown error'}</div>
-        `;
-        btn.disabled = false;
-        btn.innerText = "Retry";
+        logs.innerHTML = `<div style="color: var(--danger-color)">❌ Benchmarking failed: ${state.error}</div>`;
     }
 }
 
-async function userFeedback(action) {
-    try {
-        await fetch(`${API_BASE}/user_feedback?action=${action}`, { method: 'POST' });
-        if (action === 'recleaned') {
-            document.getElementById('training-logs').innerHTML = "🔄 Restarting exploration with cleaned data...";
-        }
-    } catch (e) {
-        alert("Failed to send feedback");
-    }
-}
-
-// Helpers
-function fileName(path) {
-    return path.split(/[\\/]/).pop();
-}
-
-function cleanId(path) {
-    return path.replace(/[^a-zA-Z0-9]/g, '');
-}
-
-function escapePath(path) {
-    return path.replace(/\\/g, '\\\\');
-}
+// Global scope expose
+window.triggerAnalysis = triggerAnalysis;
+window.startTraining = startTraining;
+window.autoFixAll = autoFixAll;
+window.applyBatchFix = applyBatchFix;
+window.toggleSelectAll = toggleSelectAll;
+window.applyFixSingle = applyFixSingle;
+window.forceShowTraining = forceShowTraining;
 
 // Init
-fetchStats();
+document.addEventListener('DOMContentLoaded', fetchStats);

@@ -3,9 +3,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 from backend.core.agent_brain import analyze_situation_and_decide
-from backend.core.data_manager import apply_fix, get_dataset_stats
+from backend.core.data_manager import apply_fix, get_dataset_stats, CustomImageDataset
+from backend.core.config import TRAIN_DIR
 from backend.core.trainer import run_automated_training
 import threading
+import os
+import json
+from backend.core.config import MODELS_DIR
 
 router = APIRouter()
 
@@ -18,7 +22,7 @@ training_state = {
 
 # Phase 4: Auto-Training State
 auto_training_state = {
-    "status": "idle",  # idle, exploring, diagnosing, waiting_user, completed, failed
+    "status": "idle",
     "current_config": 0,
     "total_configs": 0,
     "current_trial": 0,
@@ -29,6 +33,27 @@ auto_training_state = {
     "iteration": 0,
     "max_iterations": 3
 }
+
+def restore_state():
+    global auto_training_state
+    metrics_path = os.path.join(MODELS_DIR, "metrics.json")
+    if os.path.exists(metrics_path):
+        try:
+            with open(metrics_path, 'r') as f:
+                data = json.load(f)
+                # If we have a valid summary, mark as completed
+                if "status" in data and data["status"] == "success":
+                    auto_training_state["status"] = "completed"
+                    auto_training_state["exploration_results"] = {
+                        "status": "success",
+                        "best_result": data.get("best_result"),
+                        "all_results": data.get("all_results", [data.get("best_result")])
+                    }
+                    auto_training_state["best_acc"] = data.get("best_result", {}).get("val_acc", 0.0)
+        except Exception as e:
+            print(f"Failed to restore state: {e}")
+
+restore_state()
 
 class FixRequest(BaseModel):
     file_path: str
@@ -55,9 +80,6 @@ def get_available_classes():
     """
     Returns all available classes for the dropdown.
     """
-    from backend.core.data_manager import TRAIN_DIR, CustomImageDataset
-    import os
-    
     if not os.path.exists(TRAIN_DIR):
         return {"classes": []}
     
@@ -76,20 +98,6 @@ class BatchFixRequest(BaseModel):
     action: str
     new_label: Optional[str] = None
 
-@router.post("/batch_fix")
-def batch_fix_issues(req: BatchFixRequest):
-    """
-    Apply the same fix to multiple files at once.
-    """
-    results = []
-    for path in req.file_paths:
-        success, msg = apply_fix(path, req.action, req.new_label)
-        results.append({"path": path, "success": success, "message": msg})
-    
-    success: int
-    failed: int
-    results: List[dict]
-
 class BatchItem(BaseModel):
     file_path: str
     new_label: str
@@ -100,14 +108,14 @@ class BatchSuggestionRequest(BaseModel):
 @router.post("/batch_fix_suggestions")
 def batch_fix_suggestions(req: BatchSuggestionRequest):
     """
-    Apply varying fixes (move to specific labels) for multiple files.
-    Ideal for 'Accept All Suggestions'.
+    Apply varying fixes (move or delete) for multiple files.
     """
     results = []
     
     for item in req.items:
-        # Action is always 'move' for suggestions
-        success, msg = apply_fix(item.file_path, 'move', item.new_label)
+        # Action is 'delete' if suggestion is 'delete', else 'move'
+        action = 'delete' if item.new_label.lower() == 'delete' else 'move'
+        success, msg = apply_fix(item.file_path, action, item.new_label)
         results.append({"path": item.file_path, "success": success, "message": msg})
         
     success_count = sum(1 for r in results if r["success"])
@@ -172,12 +180,21 @@ def run_auto_exploration_background():
         auto_training_state["status"] = "exploring"
         auto_training_state["iteration"] += 1
         
-        print(f"\n🔄 Starting auto-exploration (Iteration {auto_training_state['iteration']})...")
+        print(f"\n[AUTO] Starting auto-exploration (Iteration {auto_training_state['iteration']})...")
         
-        # Run exploration
-        results = auto_explore(target_accuracy=0.90, max_time_hours=2)
+        def progress_cb(status_dict):
+            global auto_training_state
+            auto_training_state.update(status_dict)
+            
+        # Run exploration with callback
+        results = auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=progress_cb)
         auto_training_state["exploration_results"] = results
         
+        if results["status"] == "failed":
+            error_msg = results.get('error', 'Unknown trainer error')
+            print(f"[ERROR] Trainer returned failure: {error_msg}")
+            raise Exception(error_msg)
+
         if results["status"] == "success":
             # Success! Training achieved target
             auto_training_state["status"] = "completed"
@@ -203,7 +220,7 @@ def run_auto_exploration_background():
     except Exception as e:
         auto_training_state["status"] = "failed"
         auto_training_state["error"] = str(e)
-        print(f"❌ Auto-exploration failed: {e}")
+        print(f"[ERROR] Auto-exploration failed: {e}")
         import traceback
         traceback.print_exc()
 
@@ -237,7 +254,10 @@ def start_auto_training():
 @router.get("/auto_training_status")
 def get_auto_training_status():
     """Returns current auto-training state for frontend polling."""
-    return auto_training_state
+    # Include stats for dashboard sync
+    state = auto_training_state.copy()
+    state["dataset_stats"] = get_dataset_stats()
+    return state
 
 @router.post("/user_feedback")
 def handle_user_feedback(action: str):
