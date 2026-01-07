@@ -275,10 +275,17 @@ async function startTraining() {
     if (isTraining) return;
 
     try {
-        await fetch(`${API_BASE}/start_auto_training`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/start_auto_training`, { method: 'POST' });
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }));
+            alert(`Failed to start training: ${errorData.detail || 'Unknown error'}`);
+            return;
+        }
+
         startPollingStatus();
     } catch (e) {
-        alert("Could not initiate benchmarking.");
+        alert(`Could not initiate benchmarking: ${e.message}`);
     }
 }
 
@@ -298,8 +305,9 @@ function startPollingStatus() {
 
             updateAutoTrainingUI(state);
 
-            // Stop polling when training/diagnosis is complete
-            if (["completed", "failed", "waiting_user", "diagnosing"].includes(state.status)) {
+            // Stop polling when training is truly complete or failed
+            // Keep polling during 'diagnosing' as it's a transient state
+            if (["completed", "failed", "waiting_user"].includes(state.status)) {
                 clearInterval(interval);
                 isTraining = false;
                 btn.disabled = false;

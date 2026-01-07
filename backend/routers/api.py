@@ -248,7 +248,11 @@ def start_auto_training():
     global auto_training_state
     
     if auto_training_state["status"] in ["exploring", "diagnosing"]:
-        raise HTTPException(status_code=400, detail="Auto-training already in progress")
+        current_status = auto_training_state["status"]
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Auto-training already in progress (status: {current_status}). Please wait for completion or refresh."
+        )
     
     # Reset state
     auto_training_state = {
