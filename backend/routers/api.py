@@ -304,3 +304,35 @@ def handle_user_feedback(action: str):
         return {"status": "completed", "message": "Marked as complete"}
     else:
         return {"status": "unknown_action"}
+
+@router.post("/reset_training_state")
+def reset_training_state():
+    """
+    Resets the auto-training state to idle. 
+    Useful when the state gets stuck in 'exploring' or 'diagnosing' with no actual training running.
+    """
+    global auto_training_state
+    
+    current_status = auto_training_state["status"]
+    
+    # Reset to initial idle state
+    auto_training_state = {
+        "status": "idle",
+        "current_config": 0,
+        "total_configs": 0,
+        "current_trial": 0,
+        "total_trials": 0,
+        "best_acc": 0.0,
+        "exploration_results": None,
+        "diagnosis": None,
+        "iteration": 0,
+        "max_iterations": 3,
+        "current_epoch": 0,
+        "total_epochs": 0
+    }
+    
+    return {
+        "status": "reset", 
+        "message": f"Training state reset from '{current_status}' to 'idle'",
+        "previous_status": current_status
+    }

@@ -268,6 +268,11 @@ function skipToBenchmark() {
     trainingSec.scrollIntoView({ behavior: 'smooth' });
 }
 
+function forceShowTraining() {
+    skipToBenchmark();
+}
+
+
 /**
  * AutoML Benchmarking Logic
  */
@@ -279,13 +284,47 @@ async function startTraining() {
 
         if (!res.ok) {
             const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }));
-            alert(`Failed to start training: ${errorData.detail || 'Unknown error'}`);
+
+            // Check if the error is about training already in progress
+            if (res.status === 400 && errorData.detail && errorData.detail.includes('already in progress')) {
+                // Offer to reset the stuck state
+                const shouldReset = confirm(
+                    `${errorData.detail}\n\n` +
+                    `It seems the training state is stuck. No actual training is running.\n\n` +
+                    `Would you like to reset the training state and try again?`
+                );
+
+                if (shouldReset) {
+                    await resetTrainingState();
+                    // Try starting again after reset
+                    await startTraining();
+                }
+            } else {
+                alert(`Failed to start training: ${errorData.detail || 'Unknown error'}`);
+            }
             return;
         }
 
         startPollingStatus();
     } catch (e) {
         alert(`Could not initiate benchmarking: ${e.message}`);
+    }
+}
+
+async function resetTrainingState() {
+    try {
+        const res = await fetch(`${API_BASE}/reset_training_state`, { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+            console.log(`Training state reset: ${data.message}`);
+            // Refresh the UI
+            await fetchStats();
+        } else {
+            alert('Failed to reset training state');
+        }
+    } catch (e) {
+        alert(`Error resetting state: ${e.message}`);
     }
 }
 
@@ -441,6 +480,7 @@ window.applyBatchFix = applyBatchFix;
 window.toggleSelectAll = toggleSelectAll;
 window.applyFixSingle = applyFixSingle;
 window.skipToBenchmark = skipToBenchmark;
+window.forceShowTraining = forceShowTraining;
 
 // Init
 document.addEventListener('DOMContentLoaded', fetchStats);
