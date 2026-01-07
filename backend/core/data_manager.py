@@ -125,6 +125,7 @@ def extract_features(dataset: CustomImageDataset):
     model = models.resnet18(pretrained=True)
     model.fc = torch.nn.Identity() # Remove classification layer
     model.eval()
+    model = model.to(DEVICE)  # Move model to same device as images
     
     loader = DataLoader(dataset, batch_size=32, shuffle=False)
     features = []

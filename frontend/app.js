@@ -346,25 +346,42 @@ function updateAutoTrainingUI(state) {
             </div>
         `;
     } else if (state.status === "completed") {
-        const best = state.exploration_results.best_result;
-        logs.innerHTML = `
-            <div style="color: var(--success-color); font-weight: 700;">✅ BENCHMARK COMPLETE</div>
-            <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Acc</small></h1>
-            <p><b>Winner:</b> ${best.config_name}</p>
-            <div style="margin-top: 15px; font-size: 0.8rem;">
-                <p>Train Acc: ${(best.train_acc * 100).toFixed(1)}%</p>
-                <p>Miss Rate: ${(best.miss_rate * 100).toFixed(1)}%</p>
-            </div>
-        `;
+        // Safely handle exploration_results
+        const explorationResults = state.exploration_results || {};
+        const best = explorationResults.best_result || null;
+        const results = explorationResults.all_results || state.results || [];
 
-        // Update Leaderboard
-        const history = state.exploration_results.history || [];
-        leaderboard.innerHTML = history.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name}</span>
-                <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
-            </div>
-        `).join('') || 'Evaluation results shown here.';
+        if (best) {
+            logs.innerHTML = `
+                <div style="color: var(--success-color); font-weight: 700;">✅ BENCHMARK COMPLETE</div>
+                <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Acc</small></h1>
+                <p><b>Winner:</b> ${best.config_name || 'Best Model'}</p>
+                <div style="margin-top: 15px; font-size: 0.8rem;">
+                    <p>Train Acc: ${(best.train_acc * 100).toFixed(1)}%</p>
+                    <p>Miss Rate: ${(best.miss_rate * 100).toFixed(1)}%</p>
+                    <p>Overkill Rate: ${(best.overkill_rate * 100).toFixed(1)}%</p>
+                </div>
+            `;
+
+            // Update Leaderboard with history
+            if (results.length > 0) {
+                leaderboard.innerHTML = results.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name || 'Model ' + (i + 1)}</span>
+                        <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
+                    </div>
+                `).join('');
+            } else {
+                leaderboard.innerHTML = '<p style="color: var(--text-secondary);">No evaluation history available.</p>';
+            }
+        } else {
+            // Fallback if no best_result found
+            logs.innerHTML = `
+                <div style="color: var(--success-color); font-weight: 700;">✅ TRAINING COMPLETE</div>
+                <p style="margin-top: 15px; color: var(--text-secondary);">Best model saved. Results available in logs.</p>
+            `;
+            leaderboard.innerHTML = '<p style="color: var(--text-secondary);">Evaluation results shown here.</p>';
+        }
     } else if (state.status === "failed") {
         logs.innerHTML = `<div style="color: var(--danger-color)">❌ Benchmarking failed: ${state.error}</div>`;
     }
