@@ -298,7 +298,8 @@ function startPollingStatus() {
 
             updateAutoTrainingUI(state);
 
-            if (["completed", "failed", "waiting_user"].includes(state.status)) {
+            // Stop polling when training/diagnosis is complete
+            if (["completed", "failed", "waiting_user", "diagnosing"].includes(state.status)) {
                 clearInterval(interval);
                 isTraining = false;
                 btn.disabled = false;
@@ -381,6 +382,43 @@ function updateAutoTrainingUI(state) {
                 <p style="margin-top: 15px; color: var(--text-secondary);">Best model saved. Results available in logs.</p>
             `;
             leaderboard.innerHTML = '<p style="color: var(--text-secondary);">Evaluation results shown here.</p>';
+        }
+    } else if (state.status === "diagnosing") {
+        // Show diagnosis results
+        const explorationResults = state.exploration_results || {};
+        const best = explorationResults.best_result || null;
+        const diagnosis = state.diagnosis || {};
+
+        if (best) {
+            logs.innerHTML = `
+                <div style="color: var(--warning-color); font-weight: 700;">🔍 DIAGNOSIS COMPLETE</div>
+                <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Achieved</small></h1>
+                <div style="margin-top: 15px; padding: 15px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid var(--warning-color); border-radius: 8px;">
+                    <p style="margin-bottom: 10px;"><b>Model:</b> ${best.config_name || 'Best Model'}</p>
+                    <p style="margin-bottom: 10px;"><b>Train Acc:</b> ${(best.train_acc * 100).toFixed(1)}%</p>
+                    <p style="margin-bottom: 10px;"><b>Miss Rate:</b> ${(best.miss_rate * 100).toFixed(1)}%</p>
+                    <p><b>Overkill Rate:</b> ${(best.overkill_rate * 100).toFixed(1)}%</p>
+                </div>
+                ${diagnosis.recommendation ? `
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 8px;">
+                        <p style="color: var(--accent-color); font-weight: 600; margin-bottom: 8px;">💡 Agent Recommendation:</p>
+                        <p style="font-size: 0.9rem;">${diagnosis.recommendation}</p>
+                    </div>
+                ` : ''}
+            `;
+
+            // Update leaderboard
+            const results = explorationResults.all_results || [];
+            if (results.length > 0) {
+                leaderboard.innerHTML = results.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name || 'Model ' + (i + 1)}</span>
+                        <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
+                    </div>
+                `).join('');
+            }
+        } else {
+            logs.innerHTML = `<div style="color: var(--warning-color);">🔍 Analyzing results...</div>`;
         }
     } else if (state.status === "failed") {
         logs.innerHTML = `<div style="color: var(--danger-color)">❌ Benchmarking failed: ${state.error}</div>`;

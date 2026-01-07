@@ -217,17 +217,23 @@ def run_auto_exploration_background():
             diagnosis = diagnose_after_exploration(results)
             auto_training_state["diagnosis"] = diagnosis
             
+            # After diagnosis, transition to completed state
+            # (Diagnosis is informational only, training is done)
+            auto_training_state["status"] = "completed"
+            auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            
+            # Legacy logic for special cases (kept for reference but won't execute now)
             # Check if we should ask user or continue
-            if diagnosis["diagnosis"] in ["data_quality"]:
-                # Ask user to clean data
-                auto_training_state["status"] = "waiting_user"
-            elif auto_training_state["iteration"] >= auto_training_state["max_iterations"]:
-                # Max iterations reached
-                auto_training_state["status"] = "completed"
-                auto_training_state["best_acc"] = results["best_result"]["val_acc"]
-            else:
-                # Continue with another iteration (shouldn't happen often)
-                auto_training_state["status"] = "completed"
+            # if diagnosis["diagnosis"] in ["data_quality"]:
+            #     # Ask user to clean data
+            #     auto_training_state["status"] = "waiting_user"
+            # elif auto_training_state["iteration"] >= auto_training_state["max_iterations"]:
+            #     # Max iterations reached
+            #     auto_training_state["status"] = "completed"
+            #     auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            # else:
+            #     # Continue with another iteration (shouldn't happen often)
+            #     auto_training_state["status"] = "completed"
                 
     except Exception as e:
         auto_training_state["status"] = "failed"
