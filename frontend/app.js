@@ -414,12 +414,28 @@ function updateAutoTrainingUI(state) {
         if (best) {
             logs.innerHTML = `
                 <div style="color: var(--success-color); font-weight: 700;">✅ BENCHMARK COMPLETE</div>
-                <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Acc</small></h1>
+                <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Val Acc</small></h1>
+                
                 <p><b>Winner:</b> ${best.config_name || 'Best Model'}</p>
-                <div style="margin-top: 15px; font-size: 0.8rem;">
-                    <p>Train Acc: ${(best.train_acc * 100).toFixed(1)}%</p>
-                    <p>Miss Rate: ${(best.miss_rate * 100).toFixed(1)}%</p>
-                    <p>Overkill Rate: ${(best.overkill_rate * 100).toFixed(1)}%</p>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px;">Train Acc: ${(best.train_acc * 100).toFixed(1)}%</p>
+
+                <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 0.85rem; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <div>
+                        <b style="color: var(--accent-color)">Validation Set</b>
+                        <div style="margin-top: 5px;">
+                            <div style="display:flex; justify-content:space-between;"><span>Miss:</span> <b>${(best.miss_rate * 100).toFixed(1)}%</b></div>
+                            <div style="display:flex; justify-content:space-between;"><span>Overkill:</span> <b>${(best.overkill_rate * 100).toFixed(1)}%</b></div>
+                        </div>
+                    </div>
+                    ${best.test_metrics ? `
+                    <div>
+                        <b style="color: var(--success-color)">Test Set</b>
+                        <div style="margin-top: 5px;">
+                            <div style="display:flex; justify-content:space-between;"><span>Miss:</span> <b>${(best.test_metrics.miss_rate * 100).toFixed(1)}%</b></div>
+                            <div style="display:flex; justify-content:space-between;"><span>Overkill:</span> <b>${(best.test_metrics.overkill_rate * 100).toFixed(1)}%</b></div>
+                        </div>
+                    </div>
+                    ` : '<div style="color: var(--text-secondary); font-style: italic;">No Test Set Found</div>'}
                 </div>
             `;
 
