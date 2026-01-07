@@ -163,9 +163,15 @@ def diagnose_after_exploration(exploration_results):
     Respond in JSON:
     {{
         "diagnosis": "data_quality" | "need_different_model" | "nearly_there" | "need_more_exploration",
+        "conclusion": "A concise summary of why the model failed to reach the target.",
+        "dataset_analysis": "Specific observations about dataset quality, class imbalance, or tough classes.",
         "problematic_classes": [...],
-        "reasoning": "Detailed explanation...",
-        "recommended_action": "recheck_labels" | "try_resnet50" | "fine_tune" | "continue_exploration"
+        "reasoning": "Detailed technical explanation...",
+        "recommended_action": "recheck_labels" | "try_resnet50" | "fine_tune" | "continue_exploration",
+        "next_steps": [
+            {{ "label": "Filter Dataset (Hybrid Approach)", "action": "filter_dataset" }},
+            {{ "label": "More Hyperparameter Tuning", "action": "more_tuning" }}
+        ]
     }}
     """
     

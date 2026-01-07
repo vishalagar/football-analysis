@@ -23,9 +23,21 @@ async function fetchStats() {
 
         // Sync Phase 4 (AutoML) training state if already running
         if (data.auto_training_state && data.auto_training_state.status !== "idle") {
-            if (["exploring", "diagnosing", "waiting_user", "completed"].includes(data.auto_training_state.status)) {
+            const status = data.auto_training_state.status;
+
+            // Should force show the training section if we have any state
+            if (["exploring", "diagnosing", "completed", "failed", "waiting_user"].includes(status)) {
                 forceShowTraining();
-                startPollingStatus();
+            }
+
+            // Only start polling if currently running
+            if (["exploring", "diagnosing"].includes(status)) {
+                if (!isTraining) {
+                    startPollingStatus();
+                }
+            } else {
+                // For static states (completed, failed, waiting_user), just update UI once
+                updateAutoTrainingUI(data.auto_training_state);
             }
         }
     } catch (e) {
@@ -411,6 +423,25 @@ function updateAutoTrainingUI(state) {
                 </div>
             `;
 
+            // Check for diagnosis and append analysis
+            const diagnosis = state.diagnosis || {};
+            if (diagnosis.conclusion || diagnosis.dataset_analysis) {
+                logs.innerHTML += `
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 8px; font-size: 0.9rem;">
+                        <p style="color: var(--accent-color); font-weight: 600; margin-bottom: 8px;">🧠 AI Analysis:</p>
+                        ${diagnosis.conclusion ? `<p style="margin-bottom:8px"><b>Conclusion:</b> ${diagnosis.conclusion}</p>` : ''}
+                        ${diagnosis.dataset_analysis ? `<p style="margin-bottom:8px"><b>Dataset:</b> ${diagnosis.dataset_analysis}</p>` : ''}
+                         ${diagnosis.next_steps ? `
+                            <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                                ${diagnosis.next_steps.map(step =>
+                    `<button class="btn-primary" style="font-size: 0.8rem; padding: 5px 10px;" onclick="handleNextStep('${step.action}')">${step.label}</button>`
+                ).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                 `;
+            }
+
             // Update Leaderboard with history
             if (results.length > 0) {
                 leaderboard.innerHTML = results.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
@@ -473,6 +504,7 @@ function updateAutoTrainingUI(state) {
 }
 
 // Global scope expose
+// Global scope expose
 window.triggerAnalysis = triggerAnalysis;
 window.startTraining = startTraining;
 window.autoFixAll = autoFixAll;
@@ -481,6 +513,24 @@ window.toggleSelectAll = toggleSelectAll;
 window.applyFixSingle = applyFixSingle;
 window.skipToBenchmark = skipToBenchmark;
 window.forceShowTraining = forceShowTraining;
+window.handleNextStep = handleNextStep;
+
+async function handleNextStep(action) {
+    if (action === 'filter_dataset') {
+        // Go back to cleaning section
+        const cleaningSec = document.getElementById('cleaning-section');
+        const trainingSec = document.getElementById('training-section');
+        cleaningSec.style.display = 'block';
+        trainingSec.style.display = 'none';
+        cleaningSec.scrollIntoView({ behavior: 'smooth' });
+    } else if (action === 'more_tuning') {
+        // Reset state and restart training
+        if (confirm("This will reset the current results and start a new hyperparameter tuning session. Continue?")) {
+            await resetTrainingState();
+            await startTraining();
+        }
+    }
+}
 
 // Init
 document.addEventListener('DOMContentLoaded', fetchStats);
