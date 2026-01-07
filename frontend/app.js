@@ -21,9 +21,12 @@ async function fetchStats() {
         availableClasses = clsData.classes || [];
         updateBatchDropdown();
 
-        // Sync training state if already running
-        if (data.training_state && data.training_state.status !== "idle") {
-            startPollingStatus();
+        // Sync Phase 4 (AutoML) training state if already running
+        if (data.auto_training_state && data.auto_training_state.status !== "idle") {
+            if (["exploring", "diagnosing", "waiting_user", "completed"].includes(data.auto_training_state.status)) {
+                forceShowTraining();
+                startPollingStatus();
+            }
         }
     } catch (e) {
         console.error("Dashboard out of sync:", e);
@@ -94,8 +97,11 @@ function displayAgentDecision(decision) {
         <div style="margin-bottom: 12px;">
             <b style="color: var(--accent-color)">AGENT INSIGHT:</b> ${decision.analysis || decision.decision}
         </div>
-        <div style="padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 8px;">
-            <b style="color: var(--success-color)">RECOMMENDATION:</b> ${decision.recommended_action.replace('_', ' ')}
+        <div style="padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <b style="color: var(--success-color)">RECOMMENDATION:</b> ${decision.recommended_action.replace('_', ' ')}
+            </div>
+            ${decision.recommended_action === "data_cleaning" ? `<button class="btn-success" onclick="skipToBenchmark()" style="padding: 4px 10px; height: auto; min-height: unset; font-size: 0.75rem;">Skip & Continue</button>` : ''}
         </div>
     `;
 
@@ -254,10 +260,12 @@ async function applyFixSingle(idx, action) {
     }
 }
 
-function forceShowTraining() {
-    const sec = document.getElementById('training-section');
-    sec.style.display = 'block';
-    sec.scrollIntoView({ behavior: 'smooth' });
+function skipToBenchmark() {
+    const cleaningSec = document.getElementById('cleaning-section');
+    const trainingSec = document.getElementById('training-section');
+    cleaningSec.style.display = 'none';
+    trainingSec.style.display = 'block';
+    trainingSec.scrollIntoView({ behavior: 'smooth' });
 }
 
 /**
@@ -277,8 +285,11 @@ async function startTraining() {
 function startPollingStatus() {
     isTraining = true;
     const btn = document.getElementById('train-btn');
+    const statusBadge = document.getElementById('system-status');
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Benchmarking...`;
+    statusBadge.innerText = "Auto-Benchmarking Active";
+    statusBadge.classList.add('pulse');
 
     const interval = setInterval(async () => {
         try {
@@ -292,6 +303,8 @@ function startPollingStatus() {
                 isTraining = false;
                 btn.disabled = false;
                 btn.innerText = "Start Multi-Model Benchmark";
+                statusBadge.innerText = "System Standby";
+                statusBadge.classList.remove('pulse');
                 fetchStats();
             }
         } catch (e) {
@@ -305,16 +318,31 @@ function updateAutoTrainingUI(state) {
     const logs = document.getElementById('training-logs');
     const leaderboard = document.getElementById('leaderboard-content');
 
-    if (state.status === "exploring") {
+    if (state.status === "exploring" || state.status === "final_training") {
+        const title = state.status === "exploring" ? "🚀 AUTO-BENCHMARKING ACTIVE" : "🏋️ FINAL MODEL TRAINING";
+        const subtext = state.status === "exploring"
+            ? `Fine-tuning hyperparameters using Optuna (Trial ${state.iteration})...`
+            : "Performing final deep fine-tuning for maximum accuracy...";
+
         logs.innerHTML = `
-            <div style="color: var(--accent-color); font-weight: 700; margin-bottom: 10px;">🚀 AUTO-BENCHMARKING ACTIVE</div>
+            <div style="color: var(--accent-color); font-weight: 700; margin-bottom: 10px;">${title}</div>
             <div class="progress-bar-container" style="height: 10px; background: rgba(255,255,255,0.1); border-radius: 5px; margin-bottom: 15px; overflow: hidden;">
                 <div style="width: ${(state.current_config / state.total_configs) * 100}%; height: 100%; background: var(--accent-color);"></div>
             </div>
             <p>Evaluating Architecture <b>${state.current_config + 1}</b> / ${state.total_configs}</p>
-            <p>Current Accuracy: <b>${(state.best_acc * 100).toFixed(2)}%</b></p>
+            <p>Accuracy: <b>${(state.best_acc * 100).toFixed(2)}%</b> ${state.current_val_acc ? `<small>(Current: ${(state.current_val_acc * 100).toFixed(2)}%)</small>` : ''}</p>
+            
+            <div style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                <div style="display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 5px;">
+                    <span>Epoch ${state.current_epoch || 0} / ${state.total_epochs || 0}</span>
+                </div>
+                <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden;">
+                    <div style="width: ${((state.current_epoch || 0) / (state.total_epochs || 1)) * 100}%; height: 100%; background: var(--success-color);"></div>
+                </div>
+            </div>
+
             <div style="margin-top: 20px; font-size: 0.75rem; color: var(--text-secondary);">
-                Fine-tuning hyperparameters using Optuna (Trial ${state.iteration})...
+                ${subtext}
             </div>
         `;
     } else if (state.status === "completed") {
@@ -349,7 +377,7 @@ window.autoFixAll = autoFixAll;
 window.applyBatchFix = applyBatchFix;
 window.toggleSelectAll = toggleSelectAll;
 window.applyFixSingle = applyFixSingle;
-window.forceShowTraining = forceShowTraining;
+window.skipToBenchmark = skipToBenchmark;
 
 // Init
 document.addEventListener('DOMContentLoaded', fetchStats);

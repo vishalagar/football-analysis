@@ -341,6 +341,8 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
         },
     ]
     
+    total_configs = min(len(exploration_configs), max_configs)
+    
     start_time = time.time()
     all_results = []
     best_overall = None
@@ -360,18 +362,25 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
             
             params = {"lr": lr, "batch_size": batch_size, "weight_decay": weight_decay, "model": config["model"]}
             
+            def sub_callback(epoch_data):
+                if progress_callback:
+                    progress_callback({
+                        "status": "exploring",
+                        "current_config": config_idx,
+                        "total_configs": total_configs,
+                        "best_acc": best_overall["val_acc"] if best_overall else 0.0,
+                        "iteration": trial.number,
+                        "config_name": config["name"],
+                        "current_epoch": epoch_data["epoch"],
+                        "total_epochs": epoch_data["total_epochs"],
+                        "current_val_acc": epoch_data["val_acc"]
+                    })
+
             # Short training for exploration
-            model, best_acc, history = train_model(params, dataset_train, dataset_val, num_epochs=epochs_per_trial)
+            model, best_acc, history = train_model(params, dataset_train, dataset_val, 
+                                                  num_epochs=epochs_per_trial, 
+                                                  epoch_callback=sub_callback)
             
-            if progress_callback:
-                progress_callback({
-                    "status": "exploring",
-                    "current_config": config_idx,
-                    "total_configs": min(len(exploration_configs), max_configs),
-                    "best_acc": best_overall["val_acc"] if best_overall else 0.0,
-                    "iteration": trial.number,
-                    "config_name": config["name"]
-                })
             return best_acc
         
         study = optuna.create_study(direction="maximize")
@@ -381,7 +390,23 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
         
         # Train full model with best params
         logger.info(f"  🏋️ Training full model ({epochs_final} epochs)...")
-        model, val_acc, history = train_model(best_params, dataset_train, dataset_val, num_epochs=epochs_final)
+        
+        def full_train_cb(epoch_data):
+            if progress_callback:
+                progress_callback({
+                    "status": "final_training",
+                    "current_config": config_idx,
+                    "total_configs": total_configs,
+                    "best_acc": best_overall["val_acc"] if best_overall else 0.0,
+                    "config_name": config["name"],
+                    "current_epoch": epoch_data["epoch"],
+                    "total_epochs": epoch_data["total_epochs"],
+                    "current_val_acc": epoch_data["val_acc"]
+                })
+
+        model, val_acc, history = train_model(best_params, dataset_train, dataset_val, 
+                                             num_epochs=epochs_final,
+                                             epoch_callback=full_train_cb)
         
         # Compute confusion matrix & metrics
         val_loader = DataLoader(dataset_val, batch_size=best_params['batch_size'], shuffle=False)
@@ -487,7 +512,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
     }
 
 
-def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs=10):
+def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs=10, epoch_callback=None):
     """Modified train_model to support weight_decay AND Learning Rate Scheduler."""
     num_classes = len(dataset_train.classes)
     model_name = params.get("model", "resnet18")
@@ -540,6 +565,14 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
             "val_acc": val_acc,
             "lr": optimizer.param_groups[0]['lr']
         })
+        
+        if epoch_callback:
+            epoch_callback({
+                "epoch": epoch + 1,
+                "total_epochs": num_epochs,
+                "val_acc": val_acc,
+                "val_loss": val_loss
+            })
         
         if val_acc > best_acc:
             best_acc = val_acc

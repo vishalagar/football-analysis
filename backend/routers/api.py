@@ -31,7 +31,9 @@ auto_training_state = {
     "exploration_results": None,
     "diagnosis": None,
     "iteration": 0,
-    "max_iterations": 3
+    "max_iterations": 3,
+    "current_epoch": 0,
+    "total_epochs": 0
 }
 
 def restore_state():
@@ -41,15 +43,24 @@ def restore_state():
         try:
             with open(metrics_path, 'r') as f:
                 data = json.load(f)
-                # If we have a valid summary, mark as completed
-                if "status" in data and data["status"] == "success":
-                    auto_training_state["status"] = "completed"
+                # Load all results for the leaderboard
+                if "all_results" in data:
+                    auto_training_state["results"] = data["all_results"]
+                
+                # If we have a valid summary, mark as completed or partial
+                if "status" in data:
+                    if data["status"] == "success":
+                        auto_training_state["status"] = "completed"
+                    elif data["status"] == "partial":
+                        auto_training_state["status"] = "exploring" # Or keep exploring if it was in progress
+                    
                     auto_training_state["exploration_results"] = {
-                        "status": "success",
+                        "status": data["status"],
                         "best_result": data.get("best_result"),
-                        "all_results": data.get("all_results", [data.get("best_result")])
+                        "all_results": data.get("all_results", [])
                     }
-                    auto_training_state["best_acc"] = data.get("best_result", {}).get("val_acc", 0.0)
+                    if data.get("best_result"):
+                        auto_training_state["best_acc"] = data["best_result"].get("val_acc", 0.0)
         except Exception as e:
             print(f"Failed to restore state: {e}")
 
@@ -64,7 +75,8 @@ class FixRequest(BaseModel):
 def get_system_status():
     return {
         "dataset_stats": get_dataset_stats(),
-        "training_state": training_state
+        "training_state": training_state,
+        "auto_training_state": auto_training_state
     }
 
 @router.get("/analyze")
@@ -239,7 +251,10 @@ def start_auto_training():
         "total_configs": 0,
         "current_trial": 0,
         "total_trials": 0,
+        "results": [],
         "best_acc": 0.0,
+        "current_epoch": 0,
+        "total_epochs": 0,
         "exploration_results": None,
         "diagnosis": None,
         "iteration": 0,
