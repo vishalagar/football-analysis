@@ -2,7 +2,7 @@ import ollama
 import json
 import re
 import numpy as np
-from .data_manager import detect_issues, get_dataset_stats
+from backend.app.services.data import detect_issues, get_dataset_stats
 
 def query_llama3(prompt):
     try:

@@ -22,7 +22,7 @@ try:
 except ImportError:
     HAS_TORCH = False
 
-from .config import DATASET_DIR, TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR
+from backend.app.core.config import DATASET_DIR, TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR
 
 if HAS_TORCH:
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

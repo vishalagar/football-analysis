@@ -1,15 +1,12 @@
-
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List
-from backend.core.agent_brain import analyze_situation_and_decide
-from backend.core.data_manager import apply_fix, get_dataset_stats, CustomImageDataset
-from backend.core.config import TRAIN_DIR
-from backend.core.trainer import run_automated_training
+from backend.app.services.agent import analyze_situation_and_decide, diagnose_after_exploration
+from backend.app.services.data import apply_fix, get_dataset_stats, CustomImageDataset
+from backend.app.core.config import TRAIN_DIR, MODELS_DIR
+from backend.app.services.training import run_automated_training, auto_explore
+from backend.app.schemas.requests import FixRequest, BatchFixRequest, BatchSuggestionRequest
 import threading
 import os
 import json
-from backend.core.config import MODELS_DIR
 
 router = APIRouter()
 
@@ -66,11 +63,6 @@ def restore_state():
 
 restore_state()
 
-class FixRequest(BaseModel):
-    file_path: str
-    action: str # 'delete', 'move', 'ignore'
-    new_label: Optional[str] = None
-
 @router.get("/status")
 def get_system_status():
     return {
@@ -104,18 +96,6 @@ def fix_data_issue(req: FixRequest):
     if not success:
         raise HTTPException(status_code=400, detail=msg)
     return {"status": "success", "message": msg}
-
-class BatchFixRequest(BaseModel):
-    file_paths: list[str]
-    action: str
-    new_label: Optional[str] = None
-
-class BatchItem(BaseModel):
-    file_path: str
-    new_label: str
-
-class BatchSuggestionRequest(BaseModel):
-    items: List[BatchItem]
 
 @router.post("/batch_fix_suggestions")
 def batch_fix_suggestions(req: BatchSuggestionRequest):
@@ -185,8 +165,6 @@ def start_training_endpoint():
 def run_auto_exploration_background():
     """Background thread for auto-exploration."""
     global auto_training_state
-    from backend.core.trainer import auto_explore
-    from backend.core.agent_brain import diagnose_after_exploration
     
     try:
         auto_training_state["status"] = "exploring"

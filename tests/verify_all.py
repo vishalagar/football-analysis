@@ -5,8 +5,9 @@ import os
 # Ensure backend acts as package
 sys.path.append(os.path.abspath("."))
 
-from backend.core.data_manager import get_dataset_stats, detect_issues, CustomImageDataset, TRAIN_DIR, VAL_DIR
-from backend.core.trainer import run_automated_training
+from backend.app.services.data import get_dataset_stats, detect_issues, CustomImageDataset
+from backend.app.core.config import TRAIN_DIR, VAL_DIR
+from backend.app.services.training import run_automated_training
 
 def verify_system():
     print("--- 🔬 System Verification ---")

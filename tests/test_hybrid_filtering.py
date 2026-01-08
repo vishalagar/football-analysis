@@ -3,8 +3,8 @@ import os
 import torch
 import numpy as np
 from PIL import Image
-from backend.core.data_manager import detect_issues_in_split
-from backend.core.config import TRAIN_DIR
+from backend.app.services.data import detect_issues_in_split
+from backend.app.core.config import TRAIN_DIR
 
 def create_mock_dataset(temp_dir):
     os.makedirs(temp_dir, exist_ok=True)

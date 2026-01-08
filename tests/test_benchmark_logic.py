@@ -1,8 +1,8 @@
 
 import torch
 import numpy as np
-from backend.core.trainer import train_model_with_weight_decay
-from backend.core.data_manager import CustomImageDataset
+from backend.app.services.training import train_model_with_weight_decay
+from backend.app.services.data import CustomImageDataset
 from torch.utils.data import Dataset
 import os
 import shutil

@@ -24,9 +24,16 @@ data/
 
 # Logs
 *.log
+logs/
+
+# IDE settings
+.vscode/
+.idea/
 
 # OS files
 .DS_Store
 Thumbs.db
 
+# Models
 *.pth
+models/

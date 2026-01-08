@@ -18,9 +18,10 @@ try:
 except ImportError:
     HAS_OPTUNA = False
 
-from .models import create_model
-from .config import TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR, MODELS_DIR
-from .utils import setup_logger
+from backend.app.ml.networks import create_model
+from backend.app.core.config import TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR, MODELS_DIR
+from backend.app.core.logging import setup_logger
+from backend.app.services.data import CustomImageDataset
 from datetime import datetime
 
 # Setup Logger
@@ -28,7 +29,9 @@ logger = setup_logger("pluto_trainer", os.path.join(LOGS_DIR, "pluto.log"))
 
 
 if HAS_TORCH:
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Forcing CPU for debugging...")
+    DEVICE = torch.device("cpu")
 else:
     DEVICE = "cpu"
 
@@ -121,7 +124,7 @@ def tune_hyperparameters(n_trials=5):
         print("Datasets missing")
         return None
 
-    from .data_manager import train_transform, val_transform
+    from backend.app.services.data import train_transform, val_transform
     ds_train = CustomImageDataset(TRAIN_DIR, transform=train_transform)
     ds_val = CustomImageDataset(VAL_DIR, transform=val_transform)
     
@@ -301,7 +304,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
     
     # Load datasets
     try:
-        from .data_manager import train_transform, val_transform, CustomImageDataset
+        from backend.app.services.data import train_transform, val_transform, CustomImageDataset
         dataset_train = CustomImageDataset(TRAIN_DIR, transform=train_transform)
         dataset_val = CustomImageDataset(VAL_DIR, transform=val_transform)
         classes = dataset_train.classes
@@ -594,5 +597,3 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
 
 # Override train_model to use weight_decay version
 train_model = train_model_with_weight_decay
-
-

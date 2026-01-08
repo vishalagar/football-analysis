@@ -3,7 +3,8 @@ import pathlib
 
 # Centralized BASE_DIR resolution
 # This should point to the root of the project (agent-ai-2035)
-BASE_DIR = pathlib.Path(__file__).parent.parent.parent.resolve()
+# backend/app/core/config.py -> core -> app -> backend -> agent-ai-2035
+BASE_DIR = pathlib.Path(__file__).parent.parent.parent.parent.resolve()
 
 DATASET_DIR = os.path.join(BASE_DIR, "dataset", "mlcc")
 TRAIN_DIR = os.path.join(DATASET_DIR, "train")

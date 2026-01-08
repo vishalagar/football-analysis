@@ -1,9 +1,9 @@
-
 import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from backend.routers import api
+from backend.app.api import routes
+from backend.app.core.config import DATASET_DIR, BASE_DIR
 import os
 
 app = FastAPI(title="AutoML Agent")
@@ -18,20 +18,17 @@ app.add_middleware(
 )
 
 # API Router
-app.include_router(api.router, prefix="/api")
+app.include_router(routes.router, prefix="/api")
 
 # Mount Dataset for images
-# Mount Dataset for images
-import pathlib
-BASE_DIR = pathlib.Path(__file__).parent.parent.resolve()
-DATASET_DIR = os.path.join(BASE_DIR, "dataset", "mlcc")
 if os.path.exists(DATASET_DIR):
     app.mount("/dataset", StaticFiles(directory=DATASET_DIR), name="dataset")
 
 # Static Files (Frontend)
-FRONTEND_DIR = os.path.abspath("frontend")
+# backend/app/main.py -> app -> backend -> root -> frontend
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="static")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -9,7 +9,10 @@ def setup_logger(name="pluto_logger", log_file="training.log", level=logging.INF
     # Create logs directory if it doesn't exist
     log_dir = os.path.dirname(log_file)
     if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+        try:
+            os.makedirs(log_dir)
+        except OSError:
+            pass # Handle race condition or permission error
 
     formatter = logging.Formatter(
         "%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
