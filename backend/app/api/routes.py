@@ -195,17 +195,23 @@ def run_auto_exploration_background():
             diagnosis = diagnose_after_exploration(results)
             auto_training_state["diagnosis"] = diagnosis
             
+            # After diagnosis, transition to completed state
+            # (Diagnosis is informational only, training is done)
+            auto_training_state["status"] = "completed"
+            auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            
+            # Legacy logic for special cases (kept for reference but won't execute now)
             # Check if we should ask user or continue
-            if diagnosis["diagnosis"] in ["data_quality"]:
-                # Ask user to clean data
-                auto_training_state["status"] = "waiting_user"
-            elif auto_training_state["iteration"] >= auto_training_state["max_iterations"]:
-                # Max iterations reached
-                auto_training_state["status"] = "completed"
-                auto_training_state["best_acc"] = results["best_result"]["val_acc"]
-            else:
-                # Continue with another iteration (shouldn't happen often)
-                auto_training_state["status"] = "completed"
+            # if diagnosis["diagnosis"] in ["data_quality"]:
+            #     # Ask user to clean data
+            #     auto_training_state["status"] = "waiting_user"
+            # elif auto_training_state["iteration"] >= auto_training_state["max_iterations"]:
+            #     # Max iterations reached
+            #     auto_training_state["status"] = "completed"
+            #     auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            # else:
+            #     # Continue with another iteration (shouldn't happen often)
+            #     auto_training_state["status"] = "completed"
                 
     except Exception as e:
         auto_training_state["status"] = "failed"
@@ -220,7 +226,11 @@ def start_auto_training():
     global auto_training_state
     
     if auto_training_state["status"] in ["exploring", "diagnosing"]:
-        raise HTTPException(status_code=400, detail="Auto-training already in progress")
+        current_status = auto_training_state["status"]
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Auto-training already in progress (status: {current_status}). Please wait for completion or refresh."
+        )
     
     # Reset state
     auto_training_state = {
@@ -272,3 +282,35 @@ def handle_user_feedback(action: str):
         return {"status": "completed", "message": "Marked as complete"}
     else:
         return {"status": "unknown_action"}
+
+@router.post("/reset_training_state")
+def reset_training_state():
+    """
+    Resets the auto-training state to idle. 
+    Useful when the state gets stuck in 'exploring' or 'diagnosing' with no actual training running.
+    """
+    global auto_training_state
+    
+    current_status = auto_training_state["status"]
+    
+    # Reset to initial idle state
+    auto_training_state = {
+        "status": "idle",
+        "current_config": 0,
+        "total_configs": 0,
+        "current_trial": 0,
+        "total_trials": 0,
+        "best_acc": 0.0,
+        "exploration_results": None,
+        "diagnosis": None,
+        "iteration": 0,
+        "max_iterations": 3,
+        "current_epoch": 0,
+        "total_epochs": 0
+    }
+    
+    return {
+        "status": "reset", 
+        "message": f"Training state reset from '{current_status}' to 'idle'",
+        "previous_status": current_status
+    }

@@ -23,9 +23,21 @@ async function fetchStats() {
 
         // Sync Phase 4 (AutoML) training state if already running
         if (data.auto_training_state && data.auto_training_state.status !== "idle") {
-            if (["exploring", "diagnosing", "waiting_user", "completed"].includes(data.auto_training_state.status)) {
+            const status = data.auto_training_state.status;
+
+            // Should force show the training section if we have any state
+            if (["exploring", "diagnosing", "completed", "failed", "waiting_user"].includes(status)) {
                 forceShowTraining();
-                startPollingStatus();
+            }
+
+            // Only start polling if currently running
+            if (["exploring", "diagnosing"].includes(status)) {
+                if (!isTraining) {
+                    startPollingStatus();
+                }
+            } else {
+                // For static states (completed, failed, waiting_user), just update UI once
+                updateAutoTrainingUI(data.auto_training_state);
             }
         }
     } catch (e) {
@@ -268,6 +280,11 @@ function skipToBenchmark() {
     trainingSec.scrollIntoView({ behavior: 'smooth' });
 }
 
+function forceShowTraining() {
+    skipToBenchmark();
+}
+
+
 /**
  * AutoML Benchmarking Logic
  */
@@ -275,10 +292,51 @@ async function startTraining() {
     if (isTraining) return;
 
     try {
-        await fetch(`${API_BASE}/start_auto_training`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/start_auto_training`, { method: 'POST' });
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }));
+
+            // Check if the error is about training already in progress
+            if (res.status === 400 && errorData.detail && errorData.detail.includes('already in progress')) {
+                // Offer to reset the stuck state
+                const shouldReset = confirm(
+                    `${errorData.detail}\n\n` +
+                    `It seems the training state is stuck. No actual training is running.\n\n` +
+                    `Would you like to reset the training state and try again?`
+                );
+
+                if (shouldReset) {
+                    await resetTrainingState();
+                    // Try starting again after reset
+                    await startTraining();
+                }
+            } else {
+                alert(`Failed to start training: ${errorData.detail || 'Unknown error'}`);
+            }
+            return;
+        }
+
         startPollingStatus();
     } catch (e) {
-        alert("Could not initiate benchmarking.");
+        alert(`Could not initiate benchmarking: ${e.message}`);
+    }
+}
+
+async function resetTrainingState() {
+    try {
+        const res = await fetch(`${API_BASE}/reset_training_state`, { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+            console.log(`Training state reset: ${data.message}`);
+            // Refresh the UI
+            await fetchStats();
+        } else {
+            alert('Failed to reset training state');
+        }
+    } catch (e) {
+        alert(`Error resetting state: ${e.message}`);
     }
 }
 
@@ -298,6 +356,8 @@ function startPollingStatus() {
 
             updateAutoTrainingUI(state);
 
+            // Stop polling when training is truly complete or failed
+            // Keep polling during 'diagnosing' as it's a transient state
             if (["completed", "failed", "waiting_user"].includes(state.status)) {
                 clearInterval(interval);
                 isTraining = false;
@@ -346,30 +406,120 @@ function updateAutoTrainingUI(state) {
             </div>
         `;
     } else if (state.status === "completed") {
-        const best = state.exploration_results.best_result;
-        logs.innerHTML = `
-            <div style="color: var(--success-color); font-weight: 700;">✅ BENCHMARK COMPLETE</div>
-            <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Acc</small></h1>
-            <p><b>Winner:</b> ${best.config_name}</p>
-            <div style="margin-top: 15px; font-size: 0.8rem;">
-                <p>Train Acc: ${(best.train_acc * 100).toFixed(1)}%</p>
-                <p>Miss Rate: ${(best.miss_rate * 100).toFixed(1)}%</p>
-            </div>
-        `;
+        // Safely handle exploration_results
+        const explorationResults = state.exploration_results || {};
+        const best = explorationResults.best_result || null;
+        const results = explorationResults.all_results || state.results || [];
 
-        // Update Leaderboard
-        const history = state.exploration_results.history || [];
-        leaderboard.innerHTML = history.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
-            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name}</span>
-                <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
-            </div>
-        `).join('') || 'Evaluation results shown here.';
+        if (best) {
+            logs.innerHTML = `
+                <div style="color: var(--success-color); font-weight: 700;">✅ BENCHMARK COMPLETE</div>
+                <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Val Acc</small></h1>
+                
+                <p><b>Winner:</b> ${best.config_name || 'Best Model'}</p>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px;">Train Acc: ${(best.train_acc * 100).toFixed(1)}%</p>
+
+                <div style="margin-top: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 0.85rem; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <div>
+                        <b style="color: var(--accent-color)">Validation Set</b>
+                        <div style="margin-top: 5px;">
+                            <div style="display:flex; justify-content:space-between;"><span>Miss:</span> <b>${(best.miss_rate * 100).toFixed(1)}%</b></div>
+                            <div style="display:flex; justify-content:space-between;"><span>Overkill:</span> <b>${(best.overkill_rate * 100).toFixed(1)}%</b></div>
+                        </div>
+                    </div>
+                    ${best.test_metrics ? `
+                    <div>
+                        <b style="color: var(--success-color)">Test Set</b>
+                        <div style="margin-top: 5px;">
+                            <div style="display:flex; justify-content:space-between;"><span>Miss:</span> <b>${(best.test_metrics.miss_rate * 100).toFixed(1)}%</b></div>
+                            <div style="display:flex; justify-content:space-between;"><span>Overkill:</span> <b>${(best.test_metrics.overkill_rate * 100).toFixed(1)}%</b></div>
+                        </div>
+                    </div>
+                    ` : '<div style="color: var(--text-secondary); font-style: italic;">No Test Set Found</div>'}
+                </div>
+            `;
+
+            // Check for diagnosis and append analysis
+            const diagnosis = state.diagnosis || {};
+            if (diagnosis.conclusion || diagnosis.dataset_analysis) {
+                logs.innerHTML += `
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 8px; font-size: 0.9rem;">
+                        <p style="color: var(--accent-color); font-weight: 600; margin-bottom: 8px;">🧠 AI Analysis:</p>
+                        ${diagnosis.conclusion ? `<p style="margin-bottom:8px"><b>Conclusion:</b> ${diagnosis.conclusion}</p>` : ''}
+                        ${diagnosis.dataset_analysis ? `<p style="margin-bottom:8px"><b>Dataset:</b> ${diagnosis.dataset_analysis}</p>` : ''}
+                         ${diagnosis.next_steps ? `
+                            <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                                ${diagnosis.next_steps.map(step =>
+                    `<button class="btn-primary" style="font-size: 0.8rem; padding: 5px 10px;" onclick="handleNextStep('${step.action}')">${step.label}</button>`
+                ).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                 `;
+            }
+
+            // Update Leaderboard with history
+            if (results.length > 0) {
+                leaderboard.innerHTML = results.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name || 'Model ' + (i + 1)}</span>
+                        <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
+                    </div>
+                `).join('');
+            } else {
+                leaderboard.innerHTML = '<p style="color: var(--text-secondary);">No evaluation history available.</p>';
+            }
+        } else {
+            // Fallback if no best_result found
+            logs.innerHTML = `
+                <div style="color: var(--success-color); font-weight: 700;">✅ TRAINING COMPLETE</div>
+                <p style="margin-top: 15px; color: var(--text-secondary);">Best model saved. Results available in logs.</p>
+            `;
+            leaderboard.innerHTML = '<p style="color: var(--text-secondary);">Evaluation results shown here.</p>';
+        }
+    } else if (state.status === "diagnosing") {
+        // Show diagnosis results
+        const explorationResults = state.exploration_results || {};
+        const best = explorationResults.best_result || null;
+        const diagnosis = state.diagnosis || {};
+
+        if (best) {
+            logs.innerHTML = `
+                <div style="color: var(--warning-color); font-weight: 700;">🔍 DIAGNOSIS COMPLETE</div>
+                <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Achieved</small></h1>
+                <div style="margin-top: 15px; padding: 15px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid var(--warning-color); border-radius: 8px;">
+                    <p style="margin-bottom: 10px;"><b>Model:</b> ${best.config_name || 'Best Model'}</p>
+                    <p style="margin-bottom: 10px;"><b>Train Acc:</b> ${(best.train_acc * 100).toFixed(1)}%</p>
+                    <p style="margin-bottom: 10px;"><b>Miss Rate:</b> ${(best.miss_rate * 100).toFixed(1)}%</p>
+                    <p><b>Overkill Rate:</b> ${(best.overkill_rate * 100).toFixed(1)}%</p>
+                </div>
+                ${diagnosis.recommendation ? `
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 8px;">
+                        <p style="color: var(--accent-color); font-weight: 600; margin-bottom: 8px;">💡 Agent Recommendation:</p>
+                        <p style="font-size: 0.9rem;">${diagnosis.recommendation}</p>
+                    </div>
+                ` : ''}
+            `;
+
+            // Update leaderboard
+            const results = explorationResults.all_results || [];
+            if (results.length > 0) {
+                leaderboard.innerHTML = results.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
+                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name || 'Model ' + (i + 1)}</span>
+                        <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
+                    </div>
+                `).join('');
+            }
+        } else {
+            logs.innerHTML = `<div style="color: var(--warning-color);">🔍 Analyzing results...</div>`;
+        }
     } else if (state.status === "failed") {
         logs.innerHTML = `<div style="color: var(--danger-color)">❌ Benchmarking failed: ${state.error}</div>`;
     }
 }
 
+// Global scope expose
 // Global scope expose
 window.triggerAnalysis = triggerAnalysis;
 window.startTraining = startTraining;
@@ -378,6 +528,25 @@ window.applyBatchFix = applyBatchFix;
 window.toggleSelectAll = toggleSelectAll;
 window.applyFixSingle = applyFixSingle;
 window.skipToBenchmark = skipToBenchmark;
+window.forceShowTraining = forceShowTraining;
+window.handleNextStep = handleNextStep;
+
+async function handleNextStep(action) {
+    if (action === 'filter_dataset') {
+        // Go back to cleaning section
+        const cleaningSec = document.getElementById('cleaning-section');
+        const trainingSec = document.getElementById('training-section');
+        cleaningSec.style.display = 'block';
+        trainingSec.style.display = 'none';
+        cleaningSec.scrollIntoView({ behavior: 'smooth' });
+    } else if (action === 'more_tuning') {
+        // Reset state and restart training
+        if (confirm("This will reset the current results and start a new hyperparameter tuning session. Continue?")) {
+            await resetTrainingState();
+            await startTraining();
+        }
+    }
+}
 
 // Init
 document.addEventListener('DOMContentLoaded', fetchStats);

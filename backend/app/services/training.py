@@ -416,6 +416,28 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
         cm = compute_confusion_matrix(model, val_loader, len(classes))
         per_class_metrics, overall_metrics = compute_metrics_from_cm(cm, classes)
         
+        # Check and Evaluate on Test Set if exists
+        test_metrics_result = None
+        if os.path.exists(TEST_DIR):
+            try:
+                # Reuse val_transform for test
+                dataset_test = CustomImageDataset(TEST_DIR, transform=val_transform)
+                if len(dataset_test) > 0:
+                    test_loader = DataLoader(dataset_test, batch_size=best_params['batch_size'], shuffle=False)
+                    cm_test = compute_confusion_matrix(model, test_loader, len(classes))
+                    per_class_metrics_test, overall_metrics_test = compute_metrics_from_cm(cm_test, classes)
+                    
+                    test_metrics_result = {
+                        "accuracy": overall_metrics_test['accuracy'],
+                        "miss_rate": overall_metrics_test['miss_rate'],
+                        "overkill_rate": overall_metrics_test['overkill_rate'],
+                        "per_class_metrics": per_class_metrics_test,
+                        "confusion_matrix": cm_test.tolist()
+                    }
+                    logger.info(f"  🧪 Test Set: Acc={overall_metrics_test['accuracy']:.4f}, Miss={overall_metrics_test['miss_rate']:.4f}, Overkill={overall_metrics_test['overkill_rate']:.4f}")
+            except Exception as e:
+                logger.warning(f"Could to evaluate test set: {e}")
+
         train_loader = DataLoader(dataset_train, batch_size=best_params['batch_size'], shuffle=False)
         criterion = nn.CrossEntropyLoss()
         train_loss, train_acc = validate(model, train_loader, criterion)
@@ -430,6 +452,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
             "miss_rate": overall_metrics['miss_rate'],
             "overkill_rate": overall_metrics['overkill_rate'],
             "per_class_metrics": per_class_metrics,
+            "test_metrics": test_metrics_result,
             "epochs_trained": epochs_final,
             "history": history,
             "confusion_matrix": cm.tolist()
