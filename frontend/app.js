@@ -145,7 +145,9 @@ function renderIssues(issues) {
             <div style="grid-column: 1/-1; text-align: center; padding: 40px; border: 2px dashed var(--card-border); border-radius: 20px;">
                 <h3 style="color: var(--success-color)">✨ Dataset is Clean!</h3>
                 <p style="color: var(--text-secondary)">No further issues detected by the agent.</p>
-                <button class="btn-primary" onclick="forceShowTraining()" style="margin: 20px auto;">Continue to Benchmarking</button>
+                <p style="color: var(--accent-color); margin-top: 20px; font-size: 0.9rem;">
+                    When ready, click <b>"Proceed to Benchmark →"</b> in the toolbar above to continue.
+                </p>
             </div>
         `;
         return;
