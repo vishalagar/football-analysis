@@ -9,7 +9,7 @@ let isTraining = false;
 /**
  * Initial Stats & Environment Setup
  */
-async function fetchStats() {
+async function fetchStats(shouldRedirect = true) {
     try {
         const res = await fetch(`${API_BASE}/status`);
         const data = await res.json();
@@ -26,7 +26,8 @@ async function fetchStats() {
             const status = data.auto_training_state.status;
 
             // Should force show the training section if we have any state
-            if (["exploring", "diagnosing", "completed", "failed", "waiting_user"].includes(status)) {
+            // BUT ONLY if allowed to redirect
+            if (shouldRedirect && ["exploring", "diagnosing", "completed", "failed", "waiting_user"].includes(status)) {
                 forceShowTraining();
             }
 
@@ -77,8 +78,9 @@ function updateBatchDropdown() {
  * Intelligent Agent Integration
  */
 async function triggerAnalysis() {
-    const output = document.getElementById('agent-output');
     const btn = document.getElementById('analyze-btn');
+
+    if (isTraining) return alert("Cannot run analysis while training is active.");
 
     output.classList.add('pulse');
     output.innerHTML = "<b>Agent is analyzing dataset gradients and label consistency...</b>";
@@ -220,7 +222,7 @@ async function applyBatchFix() {
             allIssues = allIssues.filter(i => !selectedIssues.has(i.file_path));
             selectedIssues.clear();
             renderIssues(allIssues);
-            fetchStats();
+            fetchStats(false);
         }
     } catch (e) {
         alert("Batch fix failed: " + e.message);
@@ -243,7 +245,7 @@ async function autoFixAll() {
             allIssues = [];
             selectedIssues.clear();
             renderIssues([]);
-            fetchStats();
+            fetchStats(false);
         }
     } catch (e) {
         alert("Auto-fix failed");
@@ -265,7 +267,7 @@ async function applyFixSingle(idx, action) {
             allIssues.splice(idx, 1);
             selectedIssues.delete(issue.file_path);
             renderIssues(allIssues);
-            fetchStats();
+            fetchStats(false);
         }
     } catch (e) {
         alert("Action failed");
@@ -345,6 +347,7 @@ function startPollingStatus() {
     const btn = document.getElementById('train-btn');
     const statusBadge = document.getElementById('system-status');
     btn.disabled = true;
+    document.getElementById('analyze-btn').disabled = true;
     btn.innerHTML = `<span class="spinner"></span> Benchmarking...`;
     statusBadge.innerText = "Auto-Benchmarking Active";
     statusBadge.classList.add('pulse');
@@ -365,7 +368,8 @@ function startPollingStatus() {
                 btn.innerText = "Start Multi-Model Benchmark";
                 statusBadge.innerText = "System Standby";
                 statusBadge.classList.remove('pulse');
-                fetchStats();
+                fetchStats(false);
+                document.getElementById('analyze-btn').disabled = false;
             }
         } catch (e) {
             clearInterval(interval);
