@@ -78,6 +78,7 @@ function updateBatchDropdown() {
  * Intelligent Agent Integration
  */
 async function triggerAnalysis() {
+    const output = document.getElementById('agent-output');
     const btn = document.getElementById('analyze-btn');
 
     if (isTraining) return alert("Cannot run analysis while training is active.");

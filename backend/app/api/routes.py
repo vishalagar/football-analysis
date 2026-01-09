@@ -188,7 +188,8 @@ def run_auto_exploration_background():
         if results["status"] == "success":
             # Success! Training achieved target
             auto_training_state["status"] = "completed"
-            auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            if results.get("best_result") and "val_acc" in results["best_result"]:
+                auto_training_state["best_acc"] = results["best_result"]["val_acc"]
         else:
             # Need diagnosis
             auto_training_state["status"] = "diagnosing"
@@ -198,7 +199,8 @@ def run_auto_exploration_background():
             # After diagnosis, transition to completed state
             # (Diagnosis is informational only, training is done)
             auto_training_state["status"] = "completed"
-            auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            if results.get("best_result") and "val_acc" in results["best_result"]:
+                auto_training_state["best_acc"] = results["best_result"]["val_acc"]
             
             # Legacy logic for special cases (kept for reference but won't execute now)
             # Check if we should ask user or continue
@@ -232,8 +234,10 @@ def start_auto_training():
             detail=f"Auto-training already in progress (status: {current_status}). Please wait for completion or refresh."
         )
     
-    # Reset state
-    auto_training_state = {
+    
+    # Reset state by clearing and updating (maintain reference)
+    auto_training_state.clear()
+    auto_training_state.update({
         "status": "exploring",
         "current_config": 0,
         "total_configs": 0,
@@ -247,7 +251,7 @@ def start_auto_training():
         "diagnosis": None,
         "iteration": 0,
         "max_iterations": 3
-    }
+    })
     
     t = threading.Thread(target=run_auto_exploration_background)
     t.start()
@@ -269,6 +273,14 @@ def handle_user_feedback(action: str):
     action: 'recleaned' | 'satisfied' | 'continue'
     """
     global auto_training_state
+    
+    # Validate action parameter
+    valid_actions = ["recleaned", "satisfied", "continue"]
+    if action not in valid_actions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid action '{action}'. Must be one of: {', '.join(valid_actions)}"
+        )
     
     if action == "recleaned":
         # User cleaned data, restart exploration
