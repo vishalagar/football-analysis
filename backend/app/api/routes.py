@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from backend.app.services.agent import analyze_situation_and_decide, diagnose_after_exploration
-from backend.app.services.data import apply_fix, get_dataset_stats, CustomImageDataset
+from backend.app.services.data import apply_fix, get_dataset_stats, CustomImageDataset, detect_issues_with_model
 from backend.app.core.config import TRAIN_DIR, MODELS_DIR
 from backend.app.services.training import run_automated_training, auto_explore
 from backend.app.schemas.requests import FixRequest, BatchFixRequest, BatchSuggestionRequest
@@ -78,6 +78,42 @@ def analyze_dataset():
     """
     decision = analyze_situation_and_decide()
     return decision
+
+@router.get("/analyze_with_model")
+def analyze_dataset_with_model():
+    """
+    Triggers hybrid analysis using the best trained model.
+    """
+    # 1. Identify best model path
+    model_path = None
+    if auto_training_state.get("best_acc", 0) > 0:
+        # Check exploration results for path
+        if auto_training_state.get("exploration_results") and auto_training_state["exploration_results"].get("best_result"):
+             model_path = auto_training_state["exploration_results"]["best_result"].get("model_path")
+    
+    # Fallback to default best_model.pth if state is lost but file exists
+    if not model_path:
+        default_path = os.path.join(MODELS_DIR, "best_model.pth")
+        if os.path.exists(default_path):
+            model_path = default_path
+            
+    if not model_path or not os.path.exists(model_path):
+         raise HTTPException(status_code=400, detail="No trained model found. Please run benchmarking first.")
+         
+    # 2. Run Analysis
+    issues = detect_issues_with_model(model_path)
+    
+    if isinstance(issues, dict) and "error" in issues:
+        raise HTTPException(status_code=500, detail=issues["error"])
+        
+    # 3. Construct decision object similar to regular analysis
+    return {
+        "analysis": f"Hybrid Analysis using model: {os.path.basename(model_path)}. Precision is higher than initial analysis.",
+        "recommended_action": "data_cleaning",
+        "issues_list": issues,
+        "raw_issues_count": len(issues),
+        "decision": "HYBRID_ANALYSIS"
+    }
 
 @router.get("/get_classes")
 def get_available_classes():

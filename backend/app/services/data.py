@@ -22,6 +22,8 @@ try:
 except ImportError:
     HAS_TORCH = False
 
+from backend.app.ml.networks import create_model
+
 from backend.app.core.config import DATASET_DIR, TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR
 
 if HAS_TORCH:
@@ -262,6 +264,82 @@ def detect_issues():
     all_issues.extend(detect_issues_in_split("val", VAL_DIR))
         
     return all_issues
+
+def detect_issues_with_model(model_path):
+    """
+    Uses the trained model to find label issues with high precision (Hybrid Approach).
+    """
+    if not HAS_CLEANLAB or not HAS_TORCH:
+        return {"error": "Dependencies missing"}
+    
+    if not os.path.exists(model_path):
+        return {"error": "Model file not found"}
+
+    print(f"Loading model from {model_path} for Hybrid Analysis...")
+    
+    # Load Data
+    dataset = CustomImageDataset(TRAIN_DIR, transform=val_transform) # Use val_transform for deterministic eval
+    if len(dataset) == 0:
+        return {"error": "Training dataset empty"}
+        
+    loader = DataLoader(dataset, batch_size=32, shuffle=False)
+    
+    # Load Model
+    num_classes = len(dataset.classes)
+    # We need to know the architecture. For now assuming ResNet18 as it's the default.
+    # In a perfect world, we'd save metadata with the model.
+    try:
+        model = create_model(num_classes, "resnet18") 
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+        model.to(DEVICE)
+        model.eval()
+    except Exception as e:
+        return {"error": f"Failed to load model: {str(e)}"}
+    
+    # get probabilities
+    all_probs = []
+    all_labels = []
+    
+    import torch.nn.functional as F
+    
+    with torch.no_grad():
+        for images, labels, _ in loader:
+            images = images.to(DEVICE)
+            outputs = model(images)
+            probs = F.softmax(outputs, dim=1)
+            all_probs.append(probs.cpu().numpy())
+            all_labels.extend(labels.numpy())
+            
+    all_probs = np.vstack(all_probs)
+    all_labels = np.array(all_labels)
+    
+    # Cleanlab
+    print("Running Cleanlab with model probabilities...")
+    issues_indices = find_label_issues(
+        labels=all_labels,
+        pred_probs=all_probs,
+        return_indices_ranked_by="self_confidence"
+    )
+    
+    results = []
+    for idx in issues_indices:
+        img_path = dataset.files[idx]
+        given_label_idx = dataset.labels[idx]
+        given_label = dataset.classes[given_label_idx]
+        predicted_label_idx = np.argmax(all_probs[idx])
+        predicted_label = dataset.classes[predicted_label_idx]
+        conf = float(np.max(all_probs[idx]))
+        
+        results.append({
+            "file_path": img_path,
+            "issue_type": "hybrid_label_issue", # Distinct type
+            "given_label": given_label,
+            "suggested_label": predicted_label,
+            "confidence": conf,
+            "split": "train"
+        })
+        
+    return results
 
 def apply_fix(file_path, action, new_label=None):
     """

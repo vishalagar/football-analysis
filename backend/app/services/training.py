@@ -29,9 +29,10 @@ logger = setup_logger("pluto_trainer", os.path.join(LOGS_DIR, "pluto.log"))
 
 
 if HAS_TORCH:
-    # DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("Forcing CPU for debugging...")
-    DEVICE = torch.device("cpu")
+    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using Device: {DEVICE}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
 else:
     DEVICE = "cpu"
 
@@ -91,8 +92,20 @@ def train_model(params, dataset_train, dataset_val, num_epochs=10):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=params['lr'])
     
-    train_loader = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True)
-    val_loader = DataLoader(dataset_val, batch_size=params['batch_size'], shuffle=False)
+    train_loader = DataLoader(
+        dataset_train, 
+        batch_size=params['batch_size'], 
+        shuffle=True, 
+        num_workers=8, 
+        pin_memory=True
+    )
+    val_loader = DataLoader(
+        dataset_val, 
+        batch_size=params['batch_size'], 
+        shuffle=False, 
+        num_workers=8, 
+        pin_memory=True
+    )
     
     best_acc = 0.0
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -339,7 +352,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
             "name": "ResNet18 (Deep Optimization)", 
             "model": "resnet18", 
             "lr_range": [1e-5, 5e-3], 
-            "batch_size_options": [16, 32, 64], 
+            "batch_size_options": [32, 64, 128, 256], 
             "weight_decay": [1e-5, 1e-2]
         },
     ]
@@ -563,8 +576,20 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
         optimizer, mode='min', factor=0.1, patience=2
     )
     
-    train_loader = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True)
-    val_loader = DataLoader(dataset_val, batch_size=params['batch_size'], shuffle=False)
+    train_loader = DataLoader(
+        dataset_train, 
+        batch_size=params['batch_size'], 
+        shuffle=True, 
+        num_workers=8, 
+        pin_memory=True
+    )
+    val_loader = DataLoader(
+        dataset_val, 
+        batch_size=params['batch_size'], 
+        shuffle=False, 
+        num_workers=8, 
+        pin_memory=True
+    )
     
     best_acc = 0.0
     best_model_wts = copy.deepcopy(model.state_dict())
