@@ -129,7 +129,13 @@ def extract_features(dataset: CustomImageDataset):
     model.eval()
     model = model.to(DEVICE)  # Move model to same device as images
     
-    loader = DataLoader(dataset, batch_size=32, shuffle=False)
+    loader = DataLoader(
+        dataset, 
+        batch_size=256, # Increased for RTX 3090
+        shuffle=False, 
+        num_workers=8, 
+        pin_memory=True
+    )
     features = []
     
     with torch.no_grad():
@@ -282,7 +288,13 @@ def detect_issues_with_model(model_path):
     if len(dataset) == 0:
         return {"error": "Training dataset empty"}
         
-    loader = DataLoader(dataset, batch_size=32, shuffle=False)
+    loader = DataLoader(
+        dataset, 
+        batch_size=256, # Increased for RTX 3090
+        shuffle=False, 
+        num_workers=8, 
+        pin_memory=True
+    )
     
     # Load Model
     num_classes = len(dataset.classes)
