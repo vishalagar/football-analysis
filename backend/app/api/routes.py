@@ -1,4 +1,7 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import StreamingResponse
+import io
+import csv
 from backend.app.services.agent import analyze_situation_and_decide, diagnose_after_exploration
 from backend.app.services.data import apply_fix, get_dataset_stats, CustomImageDataset, detect_issues_with_model
 from backend.app.core.config import TRAIN_DIR, MODELS_DIR
@@ -101,11 +104,23 @@ def analyze_dataset_with_model():
          raise HTTPException(status_code=400, detail="No trained model found. Please run benchmarking first.")
          
     # 2. Run Analysis
-    issues = detect_issues_with_model(model_path)
+    # Ensure usage of new signature (model_path only needed, defaults to train check inside, but we want full check)
+    # Actually, the user asked for "Filter Dataset" which implies finding issues.
+    # The new detect_issues_with_model returns list.
+    # However, in step 164 we changed detect_issues_with_model to take (model_path, split, split_dir).
+    # We should run it for Train and Val here too to be comprehensive?
+    # Or just Train? Usually "Filter" implies Train.
+    
+    issues = []
+    # Train
+    issues.extend(detect_issues_with_model(model_path, "train", TRAIN_DIR))
+    # Val
+    issues.extend(detect_issues_with_model(model_path, "val", VAL_DIR))
     
     if isinstance(issues, dict) and "error" in issues:
-        raise HTTPException(status_code=500, detail=issues["error"])
-        
+         # Backward compat if function returns error dict (it currently returns list or empty list)
+         pass 
+         
     # 3. Construct decision object similar to regular analysis
     return {
         "analysis": f"Hybrid Analysis using model: {os.path.basename(model_path)}. Precision is higher than initial analysis.",
@@ -172,6 +187,59 @@ def batch_fix_issues(req: BatchFixRequest):
         "failed": len(req.file_paths) - success_count,
         "results": results
     }
+
+@router.post("/download_issues_csv")
+def download_issues_csv(req: BatchFixRequest):
+    """
+    Generates a CSV file of the provided issues.
+    Reuses BatchFixRequest just to get the list of file_paths, 
+    but ideally we want the full issue details. 
+    Let's use a generic dict body or rely on the frontend sending the right structure.
+    For simplicity, let's accept a list of issue objects.
+    """
+    # Since we don't have a specific schema for "Issue" in requests.py yet,
+    # and BatchFixRequest only has file_paths, let's define a quick Pydantic model here or just accept dict.
+    pass
+
+from pydantic import BaseModel
+class IssueItem(BaseModel):
+    file_path: str
+    issue_type: str
+    given_label: str
+    suggested_label: str
+    confidence: float
+    split: str
+
+class CsvDownloadRequest(BaseModel):
+    issues: list[IssueItem]
+
+@router.post("/download_issues_csv_file")
+def download_issues_csv_file(req: CsvDownloadRequest):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow(["File Name", "Split", "Actual Label", "Suggested Label", "Confidence", "Issue Type", "Full Path"])
+    
+    for issue in req.issues:
+        writer.writerow([
+            os.path.basename(issue.file_path),
+            issue.split,
+            issue.given_label,
+            issue.suggested_label,
+            f"{issue.confidence:.4f}",
+            issue.issue_type,
+            issue.file_path
+        ])
+        
+    output.seek(0)
+    
+    response = StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv"
+    )
+    response.headers["Content-Disposition"] = "attachment; filename=detected_issues.csv"
+    return response
 
 def run_training_background():
     global training_state

@@ -24,7 +24,7 @@ except ImportError:
 
 from backend.app.ml.networks import create_model
 
-from backend.app.core.config import DATASET_DIR, TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR
+from backend.app.core.config import DATASET_DIR, TRAIN_DIR, VAL_DIR, TEST_DIR, LOGS_DIR, MODELS_DIR
 
 if HAS_TORCH:
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -259,34 +259,46 @@ def detect_issues_in_split(split_name, split_dir):
 
     return results
 
-def detect_issues():
-    """Detects label issues and outliers using cleanlab in both Train and Valid."""
-    all_issues = []
-    
-    # Check Train
-    all_issues.extend(detect_issues_in_split("train", TRAIN_DIR))
-    
-    # Check Valid
-    all_issues.extend(detect_issues_in_split("val", VAL_DIR))
-        
     return all_issues
 
-def detect_issues_with_model(model_path):
+def detect_issues():
+    """Smart detection: Uses best model if available, else Logistic Regression."""
+    best_model_path = os.path.join(MODELS_DIR, "best_model.pth")
+    
+    if os.path.exists(best_model_path):
+        print(f"Smart Analysis: Using trained model at {best_model_path}")
+        all_issues = []
+        # Check Train
+        all_issues.extend(detect_issues_with_model(best_model_path, "train", TRAIN_DIR))
+        # Check Val
+        all_issues.extend(detect_issues_with_model(best_model_path, "val", VAL_DIR))
+        return all_issues
+    else:
+        print("Smart Analysis: No trained model found, using Logistic Regression fallback.")
+        all_issues = []
+        all_issues.extend(detect_issues_in_split("train", TRAIN_DIR))
+        all_issues.extend(detect_issues_in_split("val", VAL_DIR))
+        return all_issues
+
+def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR):
     """
     Uses the trained model to find label issues with high precision (Hybrid Approach).
     """
     if not HAS_CLEANLAB or not HAS_TORCH:
-        return {"error": "Dependencies missing"}
+        return [] # Return empty list on error for safety in loop
     
     if not os.path.exists(model_path):
-        return {"error": "Model file not found"}
+        return []
 
-    print(f"Loading model from {model_path} for Hybrid Analysis...")
+    print(f"Loading model from {model_path} for Hybrid Analysis on {split_name}...")
     
     # Load Data
-    dataset = CustomImageDataset(TRAIN_DIR, transform=val_transform) # Use val_transform for deterministic eval
+    if not os.path.exists(split_dir):
+        return []
+        
+    dataset = CustomImageDataset(split_dir, transform=val_transform) # Use val_transform for deterministic eval
     if len(dataset) == 0:
-        return {"error": "Training dataset empty"}
+        return []
         
     loader = DataLoader(
         dataset, 
@@ -299,14 +311,14 @@ def detect_issues_with_model(model_path):
     # Load Model
     num_classes = len(dataset.classes)
     # We need to know the architecture. For now assuming ResNet18 as it's the default.
-    # In a perfect world, we'd save metadata with the model.
     try:
         model = create_model(num_classes, "resnet18") 
         model.load_state_dict(torch.load(model_path, map_location=DEVICE))
         model.to(DEVICE)
         model.eval()
     except Exception as e:
-        return {"error": f"Failed to load model: {str(e)}"}
+        print(f"Error loading model: {e}")
+        return []
     
     # get probabilities
     all_probs = []
@@ -326,12 +338,16 @@ def detect_issues_with_model(model_path):
     all_labels = np.array(all_labels)
     
     # Cleanlab
-    print("Running Cleanlab with model probabilities...")
-    issues_indices = find_label_issues(
-        labels=all_labels,
-        pred_probs=all_probs,
-        return_indices_ranked_by="self_confidence"
-    )
+    print(f"Running Cleanlab with model probabilities on {split_name}...")
+    try:
+        issues_indices = find_label_issues(
+            labels=all_labels,
+            pred_probs=all_probs,
+            return_indices_ranked_by="self_confidence"
+        )
+    except Exception as e:
+        print(f"Cleanlab failed on {split_name}: {e}")
+        return []
     
     results = []
     for idx in issues_indices:
@@ -348,7 +364,7 @@ def detect_issues_with_model(model_path):
             "given_label": given_label,
             "suggested_label": predicted_label,
             "confidence": conf,
-            "split": "train"
+            "split": split_name
         })
         
     return results

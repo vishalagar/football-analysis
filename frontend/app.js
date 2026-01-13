@@ -232,6 +232,33 @@ async function applyBatchFix() {
     }
 }
 
+async function downloadCSV() {
+    if (allIssues.length === 0) return alert("No issues to download!");
+
+    try {
+        const res = await fetch(`${API_BASE}/download_issues_csv_file`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ issues: allIssues })
+        });
+
+        if (res.ok) {
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "detected_issues.csv";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } else {
+            alert("Download failed");
+        }
+    } catch (e) {
+        alert("Error downloading CSV: " + e.message);
+    }
+}
+
 async function autoFixAll() {
     if (allIssues.length === 0) return;
     if (!confirm(`Apply all ${allIssues.length} logical suggestions?`)) return;
@@ -543,10 +570,10 @@ async function handleNextStep(action) {
         const cleaningSec = document.getElementById('cleaning-section');
         const trainingSec = document.getElementById('training-section');
         const logs = document.getElementById('training-logs');
-        
+
         // Show loading state in logs
         logs.innerHTML += `<div style="margin-top:20px; color: var(--accent-color); font-style: italic;">🔄 Running Hybrid Analysis using best model...</div>`;
-        
+
         try {
             const res = await fetch(`${API_BASE}/analyze_with_model`);
             if (!res.ok) {
@@ -554,15 +581,15 @@ async function handleNextStep(action) {
                 throw new Error(err.detail || "Analysis failed");
             }
             const decision = await res.json();
-            
+
             // Switch views
             trainingSec.style.display = 'none';
             cleaningSec.style.display = 'block';
             cleaningSec.scrollIntoView({ behavior: 'smooth' });
-            
+
             // Render new issues
             displayAgentDecision(decision);
-            
+
         } catch (e) {
             alert(`Hybrid Analysis Failed: ${e.message}`);
         }
