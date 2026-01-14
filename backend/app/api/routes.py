@@ -205,10 +205,13 @@ from pydantic import BaseModel
 class IssueItem(BaseModel):
     file_path: str
     issue_type: str
+    severity: str = "MEDIUM"  # Default for backward compatibility
+    quality_score: float = 0.5  # Default for backward compatibility
     given_label: str
     suggested_label: str
     confidence: float
     split: str
+    details: dict = {}  # Optional details field
 
 class CsvDownloadRequest(BaseModel):
     issues: list[IssueItem]
@@ -218,13 +221,15 @@ def download_issues_csv_file(req: CsvDownloadRequest):
     output = io.StringIO()
     writer = csv.writer(output)
     
-    # Header
-    writer.writerow(["File Name", "Split", "Actual Label", "Suggested Label", "Confidence", "Issue Type", "Full Path"])
+    # Enhanced header with new fields
+    writer.writerow(["File Name", "Split", "Severity", "Quality Score", "Actual Label", "Suggested Label", "Confidence", "Issue Type", "Full Path"])
     
     for issue in req.issues:
         writer.writerow([
             os.path.basename(issue.file_path),
             issue.split,
+            getattr(issue, 'severity', 'MEDIUM'),
+            f"{getattr(issue, 'quality_score', 0.5):.3f}",
             issue.given_label,
             issue.suggested_label,
             f"{issue.confidence:.4f}",
