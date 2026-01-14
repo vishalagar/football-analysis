@@ -26,14 +26,22 @@ def analyze_situation_and_decide():
     stats = get_dataset_stats()
     
     # 2. Check for Issues
-    issues = detect_issues()
+    detection_result = detect_issues()
     
-    if isinstance(issues, dict) and "error" in issues:
-        return {
-            "decision": "ERROR",
-            "reason": issues["error"],
-            "action": "none"
-        }
+    # Handle new structure (dict) vs old structure (list)
+    if isinstance(detection_result, dict):
+        if "error" in detection_result:
+             return {
+                "decision": "ERROR",
+                "reason": detection_result["error"],
+                "action": "none"
+            }
+        # Extract issues list from new structure
+        issues = detection_result.get("issues", [])
+        # We can also use class_summary later if needed, but for now focus on compatibility
+    else:
+        # Backward compatibility for list
+        issues = detection_result
 
     num_issues = len(issues)
     total_train = stats.get('train', {}).get('count', 0)
