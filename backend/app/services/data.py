@@ -443,6 +443,12 @@ def detect_issues_in_split(split_name, split_dir):
         # Map similar indices to file paths
         similar_paths = [dataset.files[i] for i in feature_info["similar_samples_indices"][:3]]
         
+        # Confidence Threshold Check (Added for High Noise Strategy)
+        min_conf = ISSUE_DETECTION_CONFIG.get("min_confidence_for_relabel", 0.6)
+        if predicted_label != given_label and float(np.max(pred_probs[idx])) < min_conf:
+             # Skip this issue if confidence is too low
+             continue
+
         results.append({
             "file_path": img_path,
             "issue_type": "label_issue",
@@ -543,13 +549,11 @@ def detect_issues():
     all_issues = []
     
     # 1. Analyze Training Data
-    # STRATEGY CHANGE: Use Best Model for Train Split if available (User Request)
-    if has_model:
-        print(f"Analyzing Training Split (using Best Model at {os.path.basename(best_model_path)})...")
-        train_issues = detect_issues_with_model(best_model_path, "train", TRAIN_DIR)
-    else:
-        print("Analyzing Training Split (using Cross-Validation context)...")
-        train_issues = detect_issues_in_split("train", TRAIN_DIR)
+    # STRATEGY: Use Cross-Validation for Training Data
+    # Why? Dataset has ~30% noise. Using trained model (which memorized noise) is biased.
+    # CV provides out-of-sample predictions to find real errors.
+    print("Analyzing Training Split (using Cross-Validation context)...")
+    train_issues = detect_issues_in_split("train", TRAIN_DIR)
     all_issues.extend(train_issues)
     
     # 2. Analyze Validation Data

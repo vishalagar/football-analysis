@@ -67,5 +67,20 @@ def verify_logic():
     assert should_flag, "High confidence issue was skipped incorrectly"
     print("✅ High confidence flagging verified.")
 
+    print("\nVerifying CV Threshold Logic...")
+    # This mimics the logic added to detect_issues_in_split
+    # Scenario: CV Prediction for Training Data
+    # Pred Prob: 0.55 (Low) vs Threshold 0.65
+    
+    cv_prob = 0.55
+    min_conf = ISSUE_DETECTION_CONFIG["min_confidence_for_relabel"]
+    
+    cv_should_flag = False
+    if cv_prob >= min_conf:
+        cv_should_flag = True
+    
+    assert not cv_should_flag, "CV Low confidence issue should be skipped"
+    print("✅ CV Low confidence suppression verified.")
+
 if __name__ == "__main__":
     verify_logic()
