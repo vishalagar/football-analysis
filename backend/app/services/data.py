@@ -41,8 +41,9 @@ from PIL import Image
 ISSUE_DETECTION_CONFIG = {
     "outlier_percentile": 5,  # Top 5% most outlier-like
     "duplicate_threshold": 0.98,
-    "min_confidence_for_relabel": 0.7,
+    "min_confidence_for_relabel": 0.65, # New: Threshold for suppressing weak suggestions
     "use_ensemble": True,
+    "ensemble_weights": {"model": 0.85, "aux": 0.15}, # New: 85% Best Model, 15% Aux
     "severity_thresholds": {
         "critical": 0.9,
         "high": 0.7,
@@ -542,9 +543,13 @@ def detect_issues():
     all_issues = []
     
     # 1. Analyze Training Data
-    # Always use CV-based detection for training data to avoid overfitting bias
-    print("Analyzing Training Split (using Cross-Validation context)...")
-    train_issues = detect_issues_in_split("train", TRAIN_DIR)
+    # STRATEGY CHANGE: Use Best Model for Train Split if available (User Request)
+    if has_model:
+        print(f"Analyzing Training Split (using Best Model at {os.path.basename(best_model_path)})...")
+        train_issues = detect_issues_with_model(best_model_path, "train", TRAIN_DIR)
+    else:
+        print("Analyzing Training Split (using Cross-Validation context)...")
+        train_issues = detect_issues_in_split("train", TRAIN_DIR)
     all_issues.extend(train_issues)
     
     # 2. Analyze Validation Data
@@ -683,9 +688,10 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
             lr_clf.fit(features, all_labels)
             lr_probs = lr_clf.predict_proba(features)
             
-            # Weighted ensemble: 70% trained model, 30% feature-based
-            ensemble_probs = 0.7 * all_probs_model + 0.3 * lr_probs
-            print(f"Ensemble created (Model + LogReg) for {split_name}")
+            # Weighted ensemble calculation
+            weights = ISSUE_DETECTION_CONFIG.get("ensemble_weights", {"model": 0.85, "aux": 0.15})
+            ensemble_probs = weights["model"] * all_probs_model + weights["aux"] * lr_probs
+            print(f"Ensemble created (Model {weights['model']} + LogReg {weights['aux']}) for {split_name}")
         except Exception as e:
             print(f"Ensemble training failed, using model-only: {e}")
     
@@ -728,6 +734,13 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
             ensemble_pred = np.argmax(ensemble_probs[idx])
             ensemble_agreement = 1.0 if model_pred == ensemble_pred else 0.0
         
+        # Confidence Threshold Check
+        # Only suggest relabeling if the model is confident enough in the NEW label.
+        min_conf = ISSUE_DETECTION_CONFIG.get("min_confidence_for_relabel", 0.6)
+        if predicted_label != given_label and conf < min_conf:
+             # Skip this issue if confidence is too low
+             continue
+
         results.append({
             "file_path": img_path,
             "issue_type": "hybrid_label_issue",
