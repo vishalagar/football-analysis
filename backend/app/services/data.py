@@ -432,6 +432,12 @@ def detect_issues_in_split(split_name, split_dir):
         predicted_label_idx = np.argmax(pred_probs[idx])
         predicted_label = dataset.classes[predicted_label_idx]
         
+        conf = float(np.max(pred_probs[idx]))
+        
+        # Only include if confidence meets threshold
+        if conf < ISSUE_DETECTION_CONFIG["min_confidence_for_relabel"]:
+            continue
+            
         # Calculate quality score and severity
         quality_score = calculate_quality_score(pred_probs, labels, features, idx, class_centroids)
         severity = classify_severity(quality_score)
@@ -540,6 +546,7 @@ def detect_issues():
     print(f"Smart Analysis Strategy: {'Hybrid (Model + CV)' if has_model else 'CV-Only'}")
     
     all_issues = []
+    strategy = "CV-Only (Resource Restricted)" if not has_model else f"Hybrid (Model: {os.path.basename(best_model_path)})"
     
     # 1. Analyze Training Data
     # Always use CV-based detection for training data to avoid overfitting bias
@@ -599,10 +606,11 @@ def detect_issues():
         return {
             "issues": all_issues,
             "class_summary": class_summary,
-            "total_issues": len(all_issues)
+            "total_issues": len(all_issues),
+            "strategy": strategy
         }
     else:
-        return {"issues": all_issues, "class_summary": {}, "total_issues": len(all_issues)}
+        return {"issues": all_issues, "class_summary": {}, "total_issues": len(all_issues), "strategy": strategy}
 
 def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR):
     """
@@ -713,6 +721,10 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
         predicted_label = dataset.classes[predicted_label_idx]
         conf = float(np.max(ensemble_probs[idx]))
         
+        # Only include if confidence meets threshold
+        if conf < ISSUE_DETECTION_CONFIG["min_confidence_for_relabel"]:
+            continue
+            
         # Calculate quality score
         quality_score = calculate_quality_score(ensemble_probs, all_labels, features, idx, class_centroids)
         severity = classify_severity(quality_score)

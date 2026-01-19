@@ -99,6 +99,12 @@ def analyze_situation_and_decide():
             decision = json.loads(json_str)
             decision['raw_issues_count'] = num_issues
             decision['issues_list'] = issues # Pass full list to frontend
+            
+            # Append strategy info to analysis if available
+            if isinstance(detection_result, dict) and "strategy" in detection_result:
+                strategy_info = f"\n\n[Analysis Strategy: {detection_result['strategy']}]"
+                decision['analysis'] = decision.get('analysis', '') + strategy_info
+                
             return decision
         else:
              return {"decision": "ERROR", "reason": "Failed to parse Agent response", "raw_response": response_text}
