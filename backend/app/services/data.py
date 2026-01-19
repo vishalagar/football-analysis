@@ -41,7 +41,7 @@ from PIL import Image
 ISSUE_DETECTION_CONFIG = {
     "outlier_percentile": 5,  # Top 5% most outlier-like
     "duplicate_threshold": 0.98,
-    "min_confidence_for_relabel": 0.65, # New: Threshold for suppressing weak suggestions
+    "min_confidence_for_relabel": 0.95, # Threshold for suppressing weak suggestions
     "use_ensemble": True,
     "ensemble_weights": {"model": 0.85, "aux": 0.15}, # New: 85% Best Model, 15% Aux
     "severity_thresholds": {
@@ -449,11 +449,7 @@ def detect_issues_in_split(split_name, split_dir):
         # Map similar indices to file paths
         similar_paths = [dataset.files[i] for i in feature_info["similar_samples_indices"][:3]]
         
-        # Confidence Threshold Check (Added for High Noise Strategy)
-        min_conf = ISSUE_DETECTION_CONFIG.get("min_confidence_for_relabel", 0.6)
-        if predicted_label != given_label and float(np.max(pred_probs[idx])) < min_conf:
-             # Skip this issue if confidence is too low
-             continue
+
 
         results.append({
             "file_path": img_path,
@@ -750,12 +746,7 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
             ensemble_pred = np.argmax(ensemble_probs[idx])
             ensemble_agreement = 1.0 if model_pred == ensemble_pred else 0.0
         
-        # Confidence Threshold Check
-        # Only suggest relabeling if the model is confident enough in the NEW label.
-        min_conf = ISSUE_DETECTION_CONFIG.get("min_confidence_for_relabel", 0.6)
-        if predicted_label != given_label and conf < min_conf:
-             # Skip this issue if confidence is too low
-             continue
+
 
         results.append({
             "file_path": img_path,
