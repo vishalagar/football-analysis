@@ -233,59 +233,75 @@ def compute_metrics_from_cm(cm, classes):
     
     metrics = {}
     
-    # Accumulators for overall metrics
-    total_tp = 0
-    total_fn = 0
-    total_fp = 0
+    # Total samples
+    total_samples = np.sum(cm)
     
     # Per-class metrics
+    per_class_recalls = []
+    
     for i, class_name in enumerate(classes):
         tp = cm[i, i]
         fn = cm[i, :].sum() - tp  # False Negatives (Miss)
-        fp = cm[:, i].sum() - tp  # False Positives (Overkill)
-        
-        total_tp += tp
-        total_fn += fn
-        total_fp += fp
+        fp = cm[:, i].sum() - tp  # False Positives (Overkill/False Alarm)
+        tn = total_samples - tp - fn - fp
         
         total_actual = tp + fn
         total_pred = tp + fp
+        total_negative = tn + fp
         
-        accuracy = tp / total_actual if total_actual > 0 else 0
+        # Metrics
+        # Accuracy for this class (Binary vs Rest)
+        class_acc = (tp + tn) / total_samples if total_samples > 0 else 0
+        
+        # Sensitivity / Recall (What % of this class was caught?)
+        recall = tp / total_actual if total_actual > 0 else 0
+        per_class_recalls.append(recall)
+        
+        # Precision (What % of predictions for this class were right?)
+        precision = tp / total_pred if total_pred > 0 else 0
+        
+        # Miss Rate = False Negative Rate (What % of this class was missed?)
         miss_rate = fn / total_actual if total_actual > 0 else 0
-        overkill_rate = fp / total_pred if total_pred > 0 else 0
+        
+        # Overkill Rate = False Positive Rate (What % of logic incorrectly flagged this class?)
+        # Logic: Of all things that were NOT this class, how many were called this class?
+        overkill_rate = fp / total_negative if total_negative > 0 else 0
         
         metrics[class_name] = {
-            "accuracy": float(accuracy),
+            "accuracy": float(recall), # Keeping key 'accuracy' as Recall for backward compat with 'balanced_acc' logic below
+            "class_accuracy": float(class_acc), # True binary accuracy
+            "precision": float(precision),
+            "recall": float(recall),
             "miss_rate": float(miss_rate),
             "overkill_rate": float(overkill_rate)
         }
     
     # Overall dataset metrics
-    total_samples = total_tp + total_fn
-    total_predictions = total_tp + total_fp
-    
+    # Standard Overall Accuracy
+    total_tp = np.trace(cm)
     overall_accuracy = total_tp / total_samples if total_samples > 0 else 0
-    overall_miss_rate = total_fn / total_samples if total_samples > 0 else 0
-    overall_overkill_rate = total_fp / total_predictions if total_predictions > 0 else 0
     
-    # Balanced Acc and Macro F1
+    # Macro Averages
+    avg_miss_rate = np.mean([m["miss_rate"] for m in metrics.values()])
+    avg_overkill_rate = np.mean([m["overkill_rate"] for m in metrics.values()])
+    balanced_acc = np.mean(per_class_recalls)
+    
+    # Macro F1
     per_class_f1s = []
     for m in metrics.values():
-        prec = 1.0 - m["overkill_rate"]
-        rec = m["accuracy"]
+        prec = m["precision"]
+        rec = m["recall"]
         f1 = 2 * (prec * rec) / (prec + rec + 1e-9)
         per_class_f1s.append(f1)
     
-    balanced_acc = np.mean([m["accuracy"] for m in metrics.values()]) if metrics else 0.0
     macro_f1 = np.mean(per_class_f1s) if per_class_f1s else 0.0
     
     return metrics, {
         "accuracy": float(overall_accuracy),
         "balanced_acc": float(balanced_acc),
         "macro_f1": float(macro_f1),
-        "miss_rate": float(overall_miss_rate),
-        "overkill_rate": float(overall_overkill_rate)
+        "miss_rate": float(avg_miss_rate),       # Macro Average
+        "overkill_rate": float(avg_overkill_rate) # Macro Average
     }
 
 def compute_confusion_matrix(model, loader, num_classes):
