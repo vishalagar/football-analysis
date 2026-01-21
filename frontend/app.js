@@ -103,6 +103,102 @@ async function triggerAnalysis() {
     }
 }
 
+async function evaluateCurrentModel() {
+    const output = document.getElementById('agent-output');
+    const btn = document.getElementById('evaluate-btn');
+
+    if (isTraining) return alert("Cannot evaluate while training is active.");
+
+    output.classList.add('pulse');
+    output.innerHTML = "<b>Evaluating current best model...</b>";
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API_BASE}/evaluate_current_model`);
+        if (!res.ok) {
+            const errBody = await res.text();
+            throw new Error(`Server Error (${res.status}): ${errBody.slice(0, 100)}`);
+        }
+        const results = await res.json();
+        displayEvaluationResults(results);
+    } catch (e) {
+        output.innerHTML = `<span style="color: var(--danger-color)">Evaluation Error: ${e.message}</span>`;
+    } finally {
+        output.classList.remove('pulse');
+        btn.disabled = false;
+    }
+}
+
+function displayEvaluationResults(results) {
+    const container = document.getElementById('agent-output');
+
+    const valMetrics = results.val.metrics;
+    const testMetrics = results.test ? results.test.metrics : null;
+
+    container.innerHTML = `
+        <div style="margin-bottom: 12px;">
+            <b style="color: var(--accent-color)">MODEL EVALUATION RESULTS</b>
+        </div>
+        <div style="display: grid; grid-template-columns: ${testMetrics ? '1fr 1fr' : '1fr'}; gap: 20px; margin-top: 15px;">
+            <div style="padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.3);">
+                <h3 style="color: var(--accent-color); margin-bottom: 15px; font-size: 1rem;">Validation Set</h3>
+                <div style="display: grid; gap: 10px; font-size: 0.9rem;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Accuracy:</span>
+                        <b style="color: var(--success-color)">${(valMetrics.accuracy * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Balanced Acc:</span>
+                        <b>${(valMetrics.balanced_acc * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <span>Miss Rate:</span>
+                        <b style="color: var(--danger-color)">${(valMetrics.miss_rate * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Overkill Rate:</span>
+                        <b style="color: var(--warning-color)">${(valMetrics.overkill_rate * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Macro F1:</span>
+                        <b>${(valMetrics.macro_f1 * 100).toFixed(2)}%</b>
+                    </div>
+                </div>
+            </div>
+            ${testMetrics ? `
+            <div style="padding: 15px; background: rgba(34, 197, 94, 0.1); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
+                <h3 style="color: var(--success-color); margin-bottom: 15px; font-size: 1rem;">Test Set</h3>
+                <div style="display: grid; gap: 10px; font-size: 0.9rem;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Accuracy:</span>
+                        <b style="color: var(--success-color)">${(testMetrics.accuracy * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Balanced Acc:</span>
+                        <b>${(testMetrics.balanced_acc * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+                        <span>Miss Rate:</span>
+                        <b style="color: var(--danger-color)">${(testMetrics.miss_rate * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Overkill Rate:</span>
+                        <b style="color: var(--warning-color)">${(testMetrics.overkill_rate * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Macro F1:</span>
+                        <b>${(testMetrics.macro_f1 * 100).toFixed(2)}%</b>
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+        </div>
+        <div style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; font-size: 0.85rem; color: var(--text-secondary);">
+            <b>Model:</b> ${results.model_path ? results.model_path.split(/[\\/]/).pop() : 'best_model.pth'}
+        </div>
+    `;
+}
+
 function displayAgentDecision(decision) {
     const container = document.getElementById('agent-output');
     const cleaningSec = document.getElementById('cleaning-section');
@@ -556,6 +652,7 @@ function updateAutoTrainingUI(state) {
 // Global scope expose
 // Global scope expose
 window.triggerAnalysis = triggerAnalysis;
+window.evaluateCurrentModel = evaluateCurrentModel;
 window.startTraining = startTraining;
 window.autoFixAll = autoFixAll;
 window.applyBatchFix = applyBatchFix;

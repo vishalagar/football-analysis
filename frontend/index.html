@@ -31,9 +31,15 @@
                         <p style="color: var(--text-secondary); margin-top: 8px;">Llama3 analyzing your dataset health
                             and quality</p>
                     </div>
-                    <button class="btn-primary" onclick="triggerAnalysis()" id="analyze-btn">
-                        Run Analysis
-                    </button>
+                    <div style="display: flex; gap: 12px;">
+                        <button class="btn-primary" onclick="triggerAnalysis()" id="analyze-btn">
+                            Run Analysis
+                        </button>
+                        <button class="btn-primary" onclick="evaluateCurrentModel()" id="evaluate-btn" 
+                                style="background: var(--success-color);">
+                            📊 Evaluate Current Model
+                        </button>
+                    </div>
                 </div>
                 <div id="agent-output" class="agent-response">
                     Dashbord initiated. Waiting for dataset analysis...
