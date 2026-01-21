@@ -281,10 +281,20 @@ def compute_metrics_from_cm(cm, classes):
     total_tp = np.trace(cm)
     overall_accuracy = total_tp / total_samples if total_samples > 0 else 0
     
-    # Macro Averages
-    avg_miss_rate = np.mean([m["miss_rate"] for m in metrics.values()])
-    avg_overkill_rate = np.mean([m["overkill_rate"] for m in metrics.values()])
+    # Macro Averages (for balanced view)
     balanced_acc = np.mean(per_class_recalls)
+    
+    # Weighted Averages (Overall for entire dataset)
+    # The user specifically requested "overall" rates for the entire dataset.
+    # Weighted average by support (total_actual) gives the true rate over the population.
+    weights = [tp + (cm[i, :].sum() - tp) for i, tp in enumerate(np.diag(cm))] # Support for each class
+    
+    if sum(weights) > 0:
+        avg_miss_rate = np.average([m["miss_rate"] for m in metrics.values()], weights=weights)
+        avg_overkill_rate = np.average([m["overkill_rate"] for m in metrics.values()], weights=weights)
+    else:
+        avg_miss_rate = 0.0
+        avg_overkill_rate = 0.0
     
     # Macro F1
     per_class_f1s = []
@@ -300,8 +310,8 @@ def compute_metrics_from_cm(cm, classes):
         "accuracy": float(overall_accuracy),
         "balanced_acc": float(balanced_acc),
         "macro_f1": float(macro_f1),
-        "miss_rate": float(avg_miss_rate),       # Macro Average
-        "overkill_rate": float(avg_overkill_rate) # Macro Average
+        "miss_rate": float(avg_miss_rate),       # Weighted Average (Overall)
+        "overkill_rate": float(avg_overkill_rate) # Weighted Average
     }
 
 def compute_confusion_matrix(model, loader, num_classes):
@@ -566,6 +576,72 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
         "total_trials": len(all_results)
     }
 
+
+
+def evaluate_saved_model(model_path=None):
+    """
+    Evaluates a saved model on validation and test sets to compute Miss and Overkill rates.
+    """
+    if model_path is None:
+        model_path = os.path.join(MODELS_DIR, "best_model.pth")
+    
+    if not os.path.exists(model_path):
+        return {"error": "Model not found"}
+        
+    try:
+        # Load Data
+        from backend.app.services.data import val_transform, CustomImageDataset
+        
+        if not os.path.exists(VAL_DIR):
+             return {"error": "Validation directory not found"}
+
+        dataset_val = CustomImageDataset(VAL_DIR, transform=val_transform)
+        if len(dataset_val) == 0:
+            return {"error": "Validation dataset is empty"}
+        
+        classes = dataset_val.classes
+        num_classes = len(classes)
+        
+        # Load Model
+        # We assume ResNet18 as it's the standard here. 
+        # Ideally we'd save architecture info, but for now this is safe.
+        model = create_model(num_classes, "resnet18") 
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+        model.to(DEVICE)
+        model.eval()
+        
+        # Evaluate Validation
+        val_loader = DataLoader(dataset_val, batch_size=32, shuffle=False)
+        cm_val = compute_confusion_matrix(model, val_loader, num_classes)
+        per_class_val, overall_val = compute_metrics_from_cm(cm_val, classes)
+        
+        # Evaluate Test if exists
+        test_results = None
+        if os.path.exists(TEST_DIR):
+            dataset_test = CustomImageDataset(TEST_DIR, transform=val_transform)
+            if len(dataset_test) > 0:
+                test_loader = DataLoader(dataset_test, batch_size=32, shuffle=False)
+                cm_test = compute_confusion_matrix(model, test_loader, num_classes)
+                per_class_test, overall_test = compute_metrics_from_cm(cm_test, classes)
+                test_results = {
+                    "metrics": overall_test,
+                    "per_class_metrics": per_class_test,
+                    "confusion_matrix": cm_test.tolist()
+                }
+        
+        return {
+            "val": {
+                "metrics": overall_val,
+                "per_class_metrics": per_class_val,
+                "confusion_matrix": cm_val.tolist()
+            },
+            "test": test_results,
+            "model_path": model_path
+        }
+            
+    except Exception as e:
+        logger.error(f"Evaluation failed: {e}")
+        return {"error": str(e)}
 
 def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs=10, epoch_callback=None):
     """Modified train_model to support weight_decay AND Learning Rate Scheduler."""

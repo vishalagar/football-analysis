@@ -130,6 +130,17 @@ def analyze_dataset_with_model():
         "decision": "HYBRID_ANALYSIS"
     }
 
+@router.get("/evaluate_current_model")
+def evaluate_current_model_endpoint():
+    """
+    Evaluates the current best model and returns metrics including Miss and Overkill rates.
+    """
+    from backend.app.services.training import evaluate_saved_model
+    results = evaluate_saved_model()
+    if "error" in results:
+        raise HTTPException(status_code=400, detail=results["error"])
+    return results
+
 @router.get("/get_classes")
 def get_available_classes():
     """
