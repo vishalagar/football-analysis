@@ -137,7 +137,10 @@ def get_dataset_stats():
         for cls_name in os.listdir(path):
             cls_path = os.path.join(path, cls_name)
             if os.path.isdir(cls_path):
-                count = len([f for f in os.listdir(cls_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))])
+                # Recursive count
+                count = 0
+                for root, _, files in os.walk(cls_path):
+                    count += len([f for f in files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))])
                 classes[cls_name] = count
                 total += count
         stats[split] = {"count": total, "classes": classes}
