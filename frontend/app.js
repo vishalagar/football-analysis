@@ -650,50 +650,74 @@ function updateAutoTrainingUI(state) {
 }
 
 async function uploadAndRun() {
+    console.log("uploadAndRun triggered");
     const fileInput = document.getElementById('dataset-upload');
     const statusDiv = document.getElementById('upload-status');
     const btn = document.getElementById('upload-btn');
 
-    if (!fileInput.files.length) {
+    if (!fileInput || !fileInput.files.length) {
+        console.warn("No file selected or input not found");
         alert("Please select a zip file first.");
         return;
     }
 
     const file = fileInput.files[0];
+    console.log(`Starting upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+
     const formData = new FormData();
     formData.append("file", file);
 
     btn.disabled = true;
-    statusDiv.innerText = "Uploading & Extracting...";
+    btn.innerHTML = `<span class="spinner"></span> Uploading...`;
+    statusDiv.innerText = "Transferring data to server... (this may take a minute for large files)";
+    statusDiv.style.color = "var(--accent-color)";
 
     try {
+        console.log("Sending fetch request to /api/upload_dataset");
         const res = await fetch(`${API_BASE}/upload_dataset`, {
             method: 'POST',
             body: formData
         });
 
+        console.log("Response received:", res.status, res.statusText);
+
         if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.detail || "Upload failed");
+            let errText = "Upload failed";
+            try {
+                const errData = await res.json();
+                errText = errData.detail || errText;
+            } catch (p) {
+                errText = await res.text() || errText;
+            }
+            throw new Error(errText);
         }
 
-        statusDiv.innerText = "Upload Complete!";
+        const successData = await res.json();
+        console.log("Upload Success:", successData);
+
+        statusDiv.innerText = "✅ Upload & Extraction Complete!";
         statusDiv.style.color = "var(--success-color)";
+        btn.innerHTML = "Success!";
 
         // Reset and refresh
         setTimeout(() => {
             statusDiv.innerText = "";
             fileInput.value = "";
             btn.disabled = false;
+            btn.innerHTML = "🚀 Upload & Run";
             fetchStats();
             // Trigger analysis automatically
+            console.log("Triggering analysis...");
             triggerAnalysis();
         }, 2000);
 
     } catch (e) {
-        statusDiv.innerText = "Error: " + e.message;
+        console.error("Upload Error Details:", e);
+        statusDiv.innerText = "❌ Error: " + e.message;
         statusDiv.style.color = "var(--danger-color)";
         btn.disabled = false;
+        btn.innerHTML = "🚀 Upload & Run";
+        alert("Upload Failed: " + e.message + "\nCheck browser console (F12) for more details.");
     }
 }
 
