@@ -18,7 +18,7 @@ def query_llama3(prompt):
                 'role': 'user',
                 'content': prompt,
               },
-            ])
+            ], options={'num_predict': 500}) # Limit output size to prevent long hangs
             return response['message']['content']
         except Exception as e:
             print(f"[WARNING] Failed to connect to {model_name}: {e}")
