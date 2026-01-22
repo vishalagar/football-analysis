@@ -21,8 +21,7 @@ app.add_middleware(
 app.include_router(routes.router, prefix="/api")
 
 # Mount Dataset for images
-if os.path.exists(DATASET_DIR):
-    app.mount("/dataset", StaticFiles(directory=DATASET_DIR), name="dataset")
+app.mount("/dataset", StaticFiles(directory=DATASET_DIR), name="dataset")
 
 # Static Files (Frontend)
 # backend/app/main.py -> app -> backend -> root -> frontend

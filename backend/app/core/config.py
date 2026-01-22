@@ -17,3 +17,4 @@ LOGS_DIR = os.path.join(BASE_DIR, "logs")
 # Ensure directories exist
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(LOGS_DIR, exist_ok=True)
+os.makedirs(DATASET_DIR, exist_ok=True)
