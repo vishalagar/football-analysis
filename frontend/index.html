@@ -8,6 +8,14 @@
     <!-- Modern font from Google -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script src="app.js" defer></script>
+    <script>
+        window.addEventListener('error', function (e) {
+            if (e.target.tagName === 'SCRIPT') {
+                console.error('Failed to load script:', e.target.src);
+            }
+        }, true);
+    </script>
 </head>
 
 <body>
@@ -151,18 +159,14 @@
                 </div>
             </div>
 
+            <div
+                style="margin-top: auto; padding: 20px; text-align: center; background: rgba(139, 92, 246, 0.05); border-radius: 20px; border: 1px dashed rgba(139, 92, 246, 0.2);">
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;">Built with <b>Llama3</b>,
+                    <b>Cleanlab</b> & <b>PyTorch</b>
+                </p>
+            </div>
+        </aside>
     </div>
-
-    <div
-        style="margin-top: auto; padding: 20px; text-align: center; background: rgba(139, 92, 246, 0.05); border-radius: 20px; border: 1px dashed rgba(139, 92, 246, 0.2);">
-        <p style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;">Built with <b>Llama3</b>,
-            <b>Cleanlab</b> & <b>PyTorch</b>
-        </p>
-    </div>
-    </aside>
-    </div>
-
-    <script src="app.js"></script>
 </body>
 
 </html>
