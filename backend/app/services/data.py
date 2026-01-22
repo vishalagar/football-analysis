@@ -95,7 +95,10 @@ class CustomImageDataset(Dataset):
         
         for cls_name in self.classes:
             cls_dir = os.path.join(root_dir, cls_name)
-            for img_path in glob.glob(os.path.join(cls_dir, "*.*")): # Catch all extensions roughly
+            # Use recursive glob to find images even in subfolders
+            # recursive=True requires ** in pattern
+            search_pattern = os.path.join(cls_dir, "**", "*.*")
+            for img_path in glob.glob(search_pattern, recursive=True): 
                 if img_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
                     self.files.append(img_path)
                     self.labels.append(self.class_to_idx[cls_name])
