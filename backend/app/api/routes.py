@@ -301,17 +301,35 @@ async def upload_dataset(file: UploadFile = File(...)):
 
     # Save and extract zip file
     try:
-        zip_path = os.path.join(DATASET_DIR, "uploaded_dataset.zip")
+        parent_dir = os.path.dirname(DATASET_DIR) # .../dataset/
+        os.makedirs(parent_dir, exist_ok=True)
+        
+        zip_path = os.path.join(parent_dir, "temp_upload.zip")
         with open(zip_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(DATASET_DIR)
+            # Check the contents of the zip
+            top_level_names = {path.split('/')[0] for path in zip_ref.namelist() if path.strip()}
+            
+            # If the zip has "mlcc/..." at its core, extract to parent folder
+            if "mlcc" in top_level_names:
+                zip_ref.extractall(parent_dir)
+            else:
+                # If it doesn't have mlcc, extract to DATASET_DIR (.../dataset/mlcc/)
+                zip_ref.extractall(DATASET_DIR)
         
         # Cleanup zip file
         os.remove(zip_path)
         
-        return {"status": "success", "message": "Dataset uploaded and extracted successfully"}
+        # Final Verification: Ensure train and val exist
+        if not os.path.exists(TRAIN_DIR) or not os.path.exists(VAL_DIR):
+            return {
+                "status": "warning", 
+                "message": "Dataset uploaded but 'train' or 'val' folders not found in expected location. Please ensure your zip structure matches 'mlcc/train' or just 'train'."
+            }
+        
+        return {"status": "success", "message": "Dataset uploaded and verified successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process zip file: {str(e)}")
 
