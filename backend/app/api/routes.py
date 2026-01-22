@@ -318,24 +318,35 @@ async def upload_dataset(file: UploadFile = File(...)):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(temp_extract_dir)
         
-        # Smart Search: Find the directory containing 'train'
+        # Smart Search: Find the directory containing 'train' (case-insensitive)
         actual_data_root = None
         for root, dirs, files in os.walk(temp_extract_dir):
-            # We look for a directory that contains a 'train' folder
-            if "train" in dirs:
+            if any(d.lower() == 'train' for d in dirs):
                 actual_data_root = root
                 break
         
         if actual_data_root:
             print(f"DEBUG: Found dataset root at {actual_data_root}")
-            # Move content to DATASET_DIR
-            # We move the *contents* of actual_data_root to DATASET_DIR
+            
+            # Normalize and Move content to DATASET_DIR
             if not os.path.exists(DATASET_DIR):
                 os.makedirs(DATASET_DIR)
                 
             for item in os.listdir(actual_data_root):
                 src_path = os.path.join(actual_data_root, item)
-                dst_path = os.path.join(DATASET_DIR, item)
+                
+                # Determine destination name (Standardize to lowercase 'train', 'val', 'test')
+                item_lower = item.lower()
+                destination_name = item
+                
+                if item_lower in ['train', 'training']:
+                    destination_name = 'train'
+                elif item_lower in ['val', 'validation']:
+                    destination_name = 'val'
+                elif item_lower in ['test', 'testing']:
+                    destination_name = 'test'
+                    
+                dst_path = os.path.join(DATASET_DIR, destination_name)
                 
                 # If destination exists (e.g. __MACOSX artifacts), skip or merge
                 if os.path.exists(dst_path):
@@ -351,7 +362,7 @@ async def upload_dataset(file: UploadFile = File(...)):
             os.remove(zip_path)
             return {
                 "status": "error", 
-                "message": "Structure invalid: Could not find a 'train' folder anywhere in the zip file."
+                "message": "Structure invalid: Could not find a 'train' folder (case-insensitive) anywhere in the zip file."
             }
         
         # Cleanup temp resources
