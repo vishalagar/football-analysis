@@ -76,6 +76,18 @@ def get_system_status():
         "auto_training_state": auto_training_state
     }
 
+@router.get("/debug_config")
+def debug_server_config():
+    """Returns the server's current path configuration for debugging."""
+    return {
+        "BASE_DIR": str(BASE_DIR),
+        "DATASET_DIR": str(DATASET_DIR),
+        "TRAIN_DIR": str(TRAIN_DIR),
+        "Dataset_Exists": os.path.exists(DATASET_DIR),
+        "Train_Exists": os.path.exists(TRAIN_DIR),
+        "Dataset_Content": os.listdir(DATASET_DIR) if os.path.exists(DATASET_DIR) else "N/A"
+    }
+
 @router.get("/analyze")
 def analyze_dataset():
     """
