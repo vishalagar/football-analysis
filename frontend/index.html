@@ -23,6 +23,26 @@
         </header>
 
         <main>
+            <!-- Dataset Management -->
+            <section class="agent-card" style="border-left-color: var(--magic-color); margin-bottom: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h2>Dataset Management</h2>
+                        <p style="color: var(--text-secondary); margin-top: 4px;">Upload your dataset zip file to start
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <input type="file" id="dataset-upload" accept=".zip"
+                            style="font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px; border: 1px solid var(--card-border);">
+                        <button class="btn-magic" onclick="uploadAndRun()" id="upload-btn" style="min-width: 180px;">
+                            🚀 Upload & Run
+                        </button>
+                    </div>
+                </div>
+                <div id="upload-status"
+                    style="margin-top: 10px; font-size: 0.85rem; text-align: right; min-height: 1.2em;"></div>
+            </section>
+
             <!-- AI Agent Analysis Section -->
             <section class="agent-card">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -35,8 +55,8 @@
                         <button class="btn-primary" onclick="triggerAnalysis()" id="analyze-btn">
                             Run Analysis
                         </button>
-                        <button class="btn-primary" onclick="evaluateCurrentModel()" id="evaluate-btn" 
-                                style="background: var(--success-color);">
+                        <button class="btn-primary" onclick="evaluateCurrentModel()" id="evaluate-btn"
+                            style="background: var(--success-color);">
                             📊 Evaluate Current Model
                         </button>
                     </div>
@@ -55,11 +75,11 @@
                         <div id="issue-count-pill"
                             style="background: var(--danger-color); color: white; padding: 2px 10px; border-radius: 10px; font-size: 0.8rem; font-weight: 700;">
                             0</div>
-                            
-                            <button class="btn-primary" onclick="downloadCSV()" 
-                                style="font-size: 0.75rem; padding: 4px 10px; height: auto; min-height: unset; background: var(--card-bg); border: 1px solid var(--accent-color); color: var(--accent-color);">
-                                ⬇ CSV
-                            </button>
+
+                        <button class="btn-primary" onclick="downloadCSV()"
+                            style="font-size: 0.75rem; padding: 4px 10px; height: auto; min-height: unset; background: var(--card-bg); border: 1px solid var(--accent-color); color: var(--accent-color);">
+                            ⬇ CSV
+                        </button>
                     </div>
 
                     <div style="display: flex; gap: 12px; align-items: center;">
@@ -73,10 +93,10 @@
                         </select>
                         <button class="btn-success" onclick="applyBatchFix()" id="batch-apply-btn"
                             style="min-width: 120px;">Apply to Selected</button>
-                        
+
                         <div style="width: 1px; height: 30px; background: var(--card-border); margin: 0 10px;"></div>
-                        
-                        <button class="btn-primary" onclick="skipToBenchmark()" 
+
+                        <button class="btn-primary" onclick="skipToBenchmark()"
                             style="background: var(--accent-color); color: white;">Proceed to Benchmark &rarr;</button>
                     </div>
                 </div>
@@ -131,25 +151,15 @@
                 </div>
             </div>
 
-            <div class="stats-card" style="margin-top: 20px;">
-                <h3 style="margin-bottom: 20px; font-size: 1.1rem; border-bottom: 1px solid var(--card-border); padding-bottom: 10px;">
-                    Upload Dataset
-                </h3>
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <input type="file" id="dataset-upload" accept=".zip" style="font-size: 0.8rem;">
-                    <button class="btn-primary" onclick="uploadAndRun()" id="upload-btn" style="width: 100%;">
-                        Upload & Start Analysis
-                    </button>
-                    <div id="upload-status" style="font-size: 0.8rem; color: var(--text-secondary); text-align: center;"></div>
-                </div>
-            </div>
+    </div>
 
-            <div
-                style="margin-top: auto; padding: 20px; text-align: center; background: rgba(139, 92, 246, 0.05); border-radius: 20px; border: 1px dashed rgba(139, 92, 246, 0.2);">
-                <p style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;">Built with <b>Llama3</b>,
-                    <b>Cleanlab</b> & <b>PyTorch</b></p>
-            </div>
-        </aside>
+    <div
+        style="margin-top: auto; padding: 20px; text-align: center; background: rgba(139, 92, 246, 0.05); border-radius: 20px; border: 1px dashed rgba(139, 92, 246, 0.2);">
+        <p style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;">Built with <b>Llama3</b>,
+            <b>Cleanlab</b> & <b>PyTorch</b>
+        </p>
+    </div>
+    </aside>
     </div>
 
     <script src="app.js"></script>
