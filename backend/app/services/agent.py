@@ -5,16 +5,26 @@ import numpy as np
 from backend.app.services.data import detect_issues, get_dataset_stats
 
 def query_llama3(prompt):
-    try:
-        response = ollama.chat(model='llama3', messages=[
-          {
-            'role': 'user',
-            'content': prompt,
-          },
-        ])
-        return response['message']['content']
-    except Exception as e:
-        return f"Error communicating with Ollama: {str(e)}"
+    """
+    Queries Ollama with fallback support (Llama3 -> Gemma3:27b).
+    """
+    models_to_try = ['llama3', 'gemma3:27b']
+    
+    for model_name in models_to_try:
+        try:
+            print(f"Agent: Connecting to {model_name}...")
+            response = ollama.chat(model=model_name, messages=[
+              {
+                'role': 'user',
+                'content': prompt,
+              },
+            ])
+            return response['message']['content']
+        except Exception as e:
+            print(f"[WARNING] Failed to connect to {model_name}: {e}")
+            continue
+            
+    return "Error communicating with Ollama: All models failed."
 
 def analyze_situation_and_decide():
     """
