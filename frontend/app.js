@@ -695,11 +695,13 @@ async function uploadAndRun() {
         const successData = await res.json();
         console.log("Upload Success:", successData);
 
-        statusDiv.innerText = "✅ Upload & Extraction Complete!";
+        statusDiv.innerText = "✅ Upload & Extraction Complete! Analyzing...";
         statusDiv.style.color = "var(--success-color)";
         btn.innerHTML = "Success!";
 
-        // Reset and refresh
+        alert("Upload Successful!\nDataset has been updated. The agent will now analyze the new data.");
+
+        // Reset and run
         setTimeout(() => {
             statusDiv.innerText = "";
             fileInput.value = "";
@@ -709,7 +711,7 @@ async function uploadAndRun() {
             // Trigger analysis automatically
             console.log("Triggering analysis...");
             triggerAnalysis();
-        }, 2000);
+        }, 1000);
 
     } catch (e) {
         console.error("Upload Error Details:", e);

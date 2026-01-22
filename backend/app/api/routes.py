@@ -304,33 +304,74 @@ async def upload_dataset(file: UploadFile = File(...)):
         parent_dir = os.path.dirname(DATASET_DIR) # .../dataset/
         os.makedirs(parent_dir, exist_ok=True)
         
+        # Creates a temporary directory for extraction
+        temp_extract_dir = os.path.join(parent_dir, "temp_extract_svc")
+        if os.path.exists(temp_extract_dir):
+            shutil.rmtree(temp_extract_dir)
+        os.makedirs(temp_extract_dir)
+
         zip_path = os.path.join(parent_dir, "temp_upload.zip")
         with open(zip_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
+        # Extract fully to temp dir
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            # Check the contents of the zip
-            top_level_names = {path.split('/')[0] for path in zip_ref.namelist() if path.strip()}
-            
-            # If the zip has "mlcc/..." at its core, extract to parent folder
-            if "mlcc" in top_level_names:
-                zip_ref.extractall(parent_dir)
-            else:
-                # If it doesn't have mlcc, extract to DATASET_DIR (.../dataset/mlcc/)
-                zip_ref.extractall(DATASET_DIR)
+            zip_ref.extractall(temp_extract_dir)
         
-        # Cleanup zip file
+        # Smart Search: Find the directory containing 'train'
+        actual_data_root = None
+        for root, dirs, files in os.walk(temp_extract_dir):
+            # We look for a directory that contains a 'train' folder
+            if "train" in dirs:
+                actual_data_root = root
+                break
+        
+        if actual_data_root:
+            print(f"DEBUG: Found dataset root at {actual_data_root}")
+            # Move content to DATASET_DIR
+            # We move the *contents* of actual_data_root to DATASET_DIR
+            if not os.path.exists(DATASET_DIR):
+                os.makedirs(DATASET_DIR)
+                
+            for item in os.listdir(actual_data_root):
+                src_path = os.path.join(actual_data_root, item)
+                dst_path = os.path.join(DATASET_DIR, item)
+                
+                # If destination exists (e.g. __MACOSX artifacts), skip or merge
+                if os.path.exists(dst_path):
+                    if os.path.isdir(src_path):
+                        shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(src_path, dst_path)
+                else:
+                    shutil.move(src_path, dst_path)
+        else:
+            # Cleanup and fail
+            shutil.rmtree(temp_extract_dir)
+            os.remove(zip_path)
+            return {
+                "status": "error", 
+                "message": "Structure invalid: Could not find a 'train' folder anywhere in the zip file."
+            }
+        
+        # Cleanup temp resources
+        shutil.rmtree(temp_extract_dir)
         os.remove(zip_path)
         
-        # Final Verification: Ensure train and val exist
-        if not os.path.exists(TRAIN_DIR) or not os.path.exists(VAL_DIR):
-            return {
+        # Final Verification
+        if not os.path.exists(TRAIN_DIR):
+             return {
                 "status": "warning", 
-                "message": "Dataset uploaded but 'train' or 'val' folders not found in expected location. Please ensure your zip structure matches 'mlcc/train' or just 'train'."
+                "message": "Extraction finished but 'train' folder is missing from destination."
             }
         
         return {"status": "success", "message": "Dataset uploaded and verified successfully"}
     except Exception as e:
+        # Emergency cleanup
+        if 'temp_extract_dir' in locals() and os.path.exists(temp_extract_dir):
+            shutil.rmtree(temp_extract_dir)
+        if 'zip_path' in locals() and os.path.exists(zip_path):
+            os.remove(zip_path)
         raise HTTPException(status_code=500, detail=f"Failed to process zip file: {str(e)}")
 
 # ============== Phase 4: Auto-Training Endpoints ==============
