@@ -649,8 +649,56 @@ function updateAutoTrainingUI(state) {
     }
 }
 
+async function uploadAndRun() {
+    const fileInput = document.getElementById('dataset-upload');
+    const statusDiv = document.getElementById('upload-status');
+    const btn = document.getElementById('upload-btn');
+
+    if (!fileInput.files.length) {
+        alert("Please select a zip file first.");
+        return;
+    }
+
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append("file", file);
+
+    btn.disabled = true;
+    statusDiv.innerText = "Uploading & Extracting...";
+
+    try {
+        const res = await fetch(`${API_BASE}/upload_dataset`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || "Upload failed");
+        }
+
+        statusDiv.innerText = "Upload Complete!";
+        statusDiv.style.color = "var(--success-color)";
+
+        // Reset and refresh
+        setTimeout(() => {
+            statusDiv.innerText = "";
+            fileInput.value = "";
+            btn.disabled = false;
+            fetchStats();
+            // Trigger analysis automatically
+            triggerAnalysis();
+        }, 2000);
+
+    } catch (e) {
+        statusDiv.innerText = "Error: " + e.message;
+        statusDiv.style.color = "var(--danger-color)";
+        btn.disabled = false;
+    }
+}
+
 // Global scope expose
-// Global scope expose
+window.uploadAndRun = uploadAndRun;
 window.triggerAnalysis = triggerAnalysis;
 window.evaluateCurrentModel = evaluateCurrentModel;
 window.startTraining = startTraining;

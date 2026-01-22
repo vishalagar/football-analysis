@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, File, UploadFile
 from fastapi.responses import StreamingResponse
 import io
 import csv
+import shutil
+import zipfile
 from backend.app.services.agent import analyze_situation_and_decide, diagnose_after_exploration
 from backend.app.services.data import apply_fix, get_dataset_stats, CustomImageDataset, detect_issues_with_model
-from backend.app.core.config import TRAIN_DIR, MODELS_DIR
+from backend.app.core.config import TRAIN_DIR, MODELS_DIR, DATASET_DIR
 from backend.app.services.training import run_automated_training, auto_explore
 from backend.app.schemas.requests import FixRequest, BatchFixRequest, BatchSuggestionRequest
 import threading
@@ -279,6 +281,39 @@ def start_training_endpoint():
     t.start()
     
     return {"status": "started", "message": "Training started in background"}
+
+@router.post("/upload_dataset")
+async def upload_dataset(file: UploadFile = File(...)):
+    """
+    Uploads a zip file containing the dataset, clears the existing dataset,
+    and extracts the new one.
+    """
+    if not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=400, detail="Only .zip files are allowed")
+
+    # Clear existing dataset directory
+    try:
+        if os.path.exists(DATASET_DIR):
+            shutil.rmtree(DATASET_DIR)
+        os.makedirs(DATASET_DIR)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear old dataset: {str(e)}")
+
+    # Save and extract zip file
+    try:
+        zip_path = os.path.join(DATASET_DIR, "uploaded_dataset.zip")
+        with open(zip_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(DATASET_DIR)
+        
+        # Cleanup zip file
+        os.remove(zip_path)
+        
+        return {"status": "success", "message": "Dataset uploaded and extracted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process zip file: {str(e)}")
 
 # ============== Phase 4: Auto-Training Endpoints ==============
 
