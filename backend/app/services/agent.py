@@ -101,25 +101,44 @@ def analyze_situation_and_decide():
                 "is_fallback": True
             }
 
+    analysis_text = response_text
+    
+    # Attempt to parse JSON
     try:
-        # Extract JSON using regex
-        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        match = re.search(r'\{.*\}', analysis_text, re.DOTALL)
         if match:
             json_str = match.group(0)
             decision = json.loads(json_str)
             decision['raw_issues_count'] = num_issues
-            decision['issues_list'] = issues # Pass full list to frontend
+            decision['issues_list'] = issues
             
-            # Append strategy info to analysis if available
             if isinstance(detection_result, dict) and "strategy" in detection_result:
                 strategy_info = f"\n\n[Analysis Strategy: {detection_result['strategy']}]"
                 decision['analysis'] = decision.get('analysis', '') + strategy_info
-                
+            
             return decision
-        else:
-             return {"decision": "ERROR", "reason": "Failed to parse Agent response", "raw_response": response_text}
     except Exception as e:
-        return {"decision": "ERROR", "reason": f"Parsing error: {str(e)}", "raw_response": response_text}
+        print(f"[WARNING] Failed to parse JSON from Agent: {e}")
+        # Proceed to fallback below
+        
+    # Fallback if AI response is not valid JSON but exists
+    print("[INFO] Using fallback decision logic due to parsing failure.")
+    if num_issues > 5:
+        return {
+            "analysis": f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Significant label issues detected. Cleaning recommended.",
+            "recommended_action": "data_cleaning",
+            "issues_list": issues,
+            "raw_issues_count": num_issues,
+            "is_fallback": True
+        }
+    else:
+        return {
+            "analysis": f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Dataset looks healthy. Training recommended.",
+            "recommended_action": "start_training",
+            "issues_list": issues,
+            "raw_issues_count": num_issues,
+            "is_fallback": True
+        }
 
 # ============== Phase 4: Post-Training Diagnosis ==============
 
