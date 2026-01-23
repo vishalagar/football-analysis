@@ -468,6 +468,26 @@ async function resetTrainingState() {
     }
 }
 
+async function fullSystemReset() {
+    if (!confirm("Are you sure? This will STOP any running training, RESET all progress, and allow you to start fresh. (Models and Datasets are preserved)")) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/reset_training_state?force_delete=true`, { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+            alert("System Reset Successfully! You can now start fresh.");
+            // Force reload to clear any local state/visuals
+            window.location.reload();
+        } else {
+            alert('Failed to reset system: ' + data.detail);
+        }
+    } catch (e) {
+        alert(`Error resetting system: ${e.message}`);
+    }
+}
+
+
 function startPollingStatus() {
     isTraining = true;
     const btn = document.getElementById('train-btn');
@@ -735,6 +755,7 @@ window.applyFixSingle = applyFixSingle;
 window.skipToBenchmark = skipToBenchmark;
 window.forceShowTraining = forceShowTraining;
 window.handleNextStep = handleNextStep;
+window.fullSystemReset = fullSystemReset;
 
 async function handleNextStep(action) {
     if (action === 'filter_dataset') {

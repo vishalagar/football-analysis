@@ -159,7 +159,7 @@ def tune_hyperparameters(n_trials=5):
     
     return study.best_params
 
-def run_automated_training(full_epochs=20, dataset_train=None, dataset_val=None):
+def run_automated_training(full_epochs=300, dataset_train=None, dataset_val=None):
     logger.info("Starting Automated Training...")
     
     # Load defaults if not provided

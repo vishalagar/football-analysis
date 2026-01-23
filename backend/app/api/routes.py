@@ -537,7 +537,7 @@ def handle_user_feedback(action: str):
         return {"status": "unknown_action"}
 
 @router.post("/reset_training_state")
-def reset_training_state():
+def reset_training_state(force_delete: bool = False):
     """
     Resets the auto-training state to idle. 
     Useful when the state gets stuck in 'exploring' or 'diagnosing' with no actual training running.
@@ -561,6 +561,15 @@ def reset_training_state():
         "current_epoch": 0,
         "total_epochs": 0
     }
+    
+    # If force_delete is True, also remove the persistence file
+    if force_delete:
+        metrics_path = os.path.join(MODELS_DIR, "metrics.json")
+        if os.path.exists(metrics_path):
+            try:
+                os.remove(metrics_path)
+            except Exception as e:
+                print(f"Failed to delete metrics.json: {e}")
     
     return {
         "status": "reset", 
