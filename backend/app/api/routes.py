@@ -41,7 +41,11 @@ auto_training_state = {
 def restore_state():
     global auto_training_state
     metrics_path = os.path.join(MODELS_DIR, "metrics.json")
-    if os.path.exists(metrics_path):
+    
+    # Check if dataset exists. If not, we SHOULD NOT restore state.
+    dataset_exists = os.path.exists(TRAIN_DIR) and len(os.listdir(TRAIN_DIR)) > 0
+    
+    if os.path.exists(metrics_path) and dataset_exists:
         try:
             with open(metrics_path, 'r') as f:
                 data = json.load(f)

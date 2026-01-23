@@ -24,8 +24,8 @@ from backend.app.core.logging import setup_logger
 from backend.app.services.data import CustomImageDataset
 from datetime import datetime
 
-# Setup Logger
-logger = setup_logger("pluto_trainer", os.path.join(LOGS_DIR, "pluto.log"))
+# Setup Logger - Overwrite on startup for fresh start
+logger = setup_logger("pluto_trainer", os.path.join(LOGS_DIR, "pluto.log"), mode='w')
 
 
 if HAS_TORCH:
