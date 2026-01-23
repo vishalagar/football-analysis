@@ -377,7 +377,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
         {
             "name": "ResNet18 (Deep Optimization)", 
             "model": "resnet18", 
-            "lr_range": [1e-5, 5e-3], 
+            "lr_range": [1e-5, 1e-3], 
             "batch_size_options": [32, 64, 128, 256], 
             "weight_decay": [1e-5, 1e-2]
         },
@@ -671,6 +671,48 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
     
     # Label smoothing helps with calibration and reduces overkill
     criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
+    
+    # ================= Warmup Phase (Linear Probe) =================
+    # Freeze backbone to align head weights first
+    if num_epochs > 1:
+        logger.info("  frozen_warmup: Freezing backbone for 1 epoch...")
+        
+        # Freeze all
+        for param in model.parameters():
+            param.requires_grad = False
+            
+        # Unfreeze Head (Arcitecture specific)
+        if hasattr(model, 'fc'): # ResNet, ShuffleNet
+            for param in model.fc.parameters():
+                param.requires_grad = True
+        elif hasattr(model, 'classifier'): # MobileNet, EfficientNet
+             for param in model.classifier.parameters():
+                param.requires_grad = True
+                
+        # Warmup Optimizer (Only Head)
+        warmup_optim = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=1e-3)
+        
+        # Temporary Loader for 1 epoch
+        warmup_loader = DataLoader(dataset_train, batch_size=params['batch_size'], shuffle=True, num_workers=4)
+        
+        # Run 1 epoch
+        model.train()
+        for images, labels, _ in warmup_loader:
+             images, labels = images.to(DEVICE), labels.to(DEVICE)
+             warmup_optim.zero_grad()
+             outputs = model(images)
+             loss = criterion(outputs, labels)
+             loss.backward()
+             warmup_optim.step()
+             
+        logger.info("  frozen_warmup: Warmup complete. Unfreezing...")
+        
+        # Unfreeze All
+        for param in model.parameters():
+            param.requires_grad = True
+    
+    # ================= Main Training Phase =================
+    
     optimizer = optim.Adam(
         model.parameters(),
         lr=params['lr'],
