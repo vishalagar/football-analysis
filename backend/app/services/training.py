@@ -357,13 +357,13 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
         max_trials_per_config = 3
         max_configs = 3
         time_budget = 3600
-        epochs_per_trial = 5 
+        epochs_per_trial = 10 
         epochs_final = 100 # Increased cap for deep fine-tuning
     elif dataset_size < 10000:
         max_trials_per_config = 5
         max_configs = 3
         time_budget = 7200
-        epochs_per_trial = 5
+        epochs_per_trial = 10
         epochs_final = 100 # Increased cap for deep fine-tuning
     else:
         max_trials_per_config = 8
@@ -651,12 +651,26 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
     
     # Calculate class weights for imbalanced data
     all_labels = dataset_train.labels
-    counts = np.bincount(all_labels)
-    weights = 1.0 / (counts + 1e-6)
-    weights = weights / weights.sum() * len(counts)
+    counts = np.bincount(all_labels, minlength=num_classes)
+    
+    # Handle classes with 0 samples to avoid excessive weights
+    weights = np.zeros(num_classes)
+    valid_mask = counts > 0
+    
+    if valid_mask.any():
+        # Calculate inverse frequency for present classes
+        weights[valid_mask] = 1.0 / counts[valid_mask]
+        # Normalize so that valid weights average to 1
+        weights[valid_mask] = weights[valid_mask] / weights[valid_mask].sum() * valid_mask.sum()
+        # Set missing classes to weight 1.0 (neutral) or 0.0
+        weights[~valid_mask] = 1.0 
+    else:
+        weights = np.ones(num_classes)
+
     class_weights = torch.FloatTensor(weights).to(DEVICE)
     
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    # Label smoothing helps with calibration and reduces overkill
+    criterion = nn.CrossEntropyLoss(weight=class_weights, label_smoothing=0.1)
     optimizer = optim.Adam(
         model.parameters(),
         lr=params['lr'],
@@ -664,8 +678,9 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
     )
     
     # Scheduler: Reduce LR if validation loss stops improving
+    # Relaxed patience and factor to prevent premature decay
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.1, patience=2
+        optimizer, mode='min', factor=0.2, patience=5, min_lr=1e-6
     )
     
     train_loader = DataLoader(
@@ -689,7 +704,8 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
     history = []
     
     # Early Stopping state
-    patience = 5
+    # Increased patience significantly to allow for convergence
+    patience = 15
     trigger_times = 0
     best_val_loss = float('inf')
     
@@ -717,13 +733,11 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
                 "val_loss": val_loss
             })
         
-        if val_acc > best_acc:
-            best_acc = val_acc
-            best_model_wts = copy.deepcopy(model.state_dict())
-            
-        # Early Stopping check
+        # Unified Best Model & Early Stopping Logic (Loss-driven for best fine-tuning)
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            best_acc = val_acc
+            best_model_wts = copy.deepcopy(model.state_dict())
             trigger_times = 0
         else:
             trigger_times += 1
