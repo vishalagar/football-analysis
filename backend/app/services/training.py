@@ -357,20 +357,20 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
         max_trials_per_config = 3
         max_configs = 3
         time_budget = 3600
-        epochs_per_trial = 10 
-        epochs_final = 100 # Increased cap for deep fine-tuning
+        epochs_per_trial = 20 
+        epochs_final = 300 # Increased cap for deep fine-tuning
     elif dataset_size < 10000:
         max_trials_per_config = 5
         max_configs = 3
         time_budget = 7200
-        epochs_per_trial = 10
-        epochs_final = 100 # Increased cap for deep fine-tuning
+        epochs_per_trial = 20
+        epochs_final = 300 # Increased cap for deep fine-tuning
     else:
         max_trials_per_config = 8
         max_configs = 3
         time_budget = 21600
-        epochs_per_trial = 3
-        epochs_final = 100 # Increased cap for deep fine-tuning
+        epochs_per_trial = 20
+        epochs_final = 300 # Increased cap for deep fine-tuning
     
     # Focusing exclusively on ResNet18 as requested
     exploration_configs = [
