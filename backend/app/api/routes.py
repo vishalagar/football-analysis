@@ -352,8 +352,9 @@ async def upload_dataset(file: UploadFile = File(...)):
                 src_path = os.path.join(actual_data_root, item)
                 
                 # Determine destination name (Standardize to lowercase 'train', 'val', 'test')
-                item_lower = item.lower()
-                destination_name = item
+                item_clean = item.strip()
+                item_lower = item_clean.lower()
+                destination_name = item_clean # Default to cleaned original name
                 
                 if item_lower in ['train', 'training', 'train_data', 'train_images']:
                     destination_name = 'train'
