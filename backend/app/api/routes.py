@@ -337,7 +337,7 @@ async def upload_dataset(file: UploadFile = File(...)):
         # Smart Search: Find the directory containing 'train' (case-insensitive)
         actual_data_root = None
         for root, dirs, files in os.walk(temp_extract_dir):
-            if any(d.lower() == 'train' for d in dirs):
+            if any(d.lower() in ['train', 'training', 'train_data', 'train_images'] for d in dirs):
                 actual_data_root = root
                 break
         
@@ -355,11 +355,11 @@ async def upload_dataset(file: UploadFile = File(...)):
                 item_lower = item.lower()
                 destination_name = item
                 
-                if item_lower in ['train', 'training']:
+                if item_lower in ['train', 'training', 'train_data', 'train_images']:
                     destination_name = 'train'
-                elif item_lower in ['val', 'validation']:
+                elif item_lower in ['val', 'validation', 'valid', 'val_data', 'val_images']:
                     destination_name = 'val'
-                elif item_lower in ['test', 'testing']:
+                elif item_lower in ['test', 'testing', 'tests', 'test_data', 'test_images']:
                     destination_name = 'test'
                     
                 dst_path = os.path.join(DATASET_DIR, destination_name)
