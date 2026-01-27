@@ -81,35 +81,63 @@ If you use the **Best Model** to judge the **Training Data**, it's like a studen
 | **With Best Model** | **Training** | **Cross-Validation (CV)** | **CRITICAL**: We *never* use the Best Model to judge its own training data. It has "memorized" these images and would be biased. CV gives an honest, unbiased second opinion. |
 | **With Best Model** | **Val & Test** | **Expert Model + Aux** | These images are new to the model, so we use its expert knowledge to find errors. |
 
-## 6. Technical Deep Dive: The Math of Cleanlab
-For those who want to see under the hood, here is how the "Confident Learning" algorithm actually works mathematically.
+## 6. The Masterclass: Extreme Math of Cleanlab
+This section explains every variable, every calculation, and exactly **why** the math is done this way.
 
-### Step 1: The Probability Matrix ($P$)
-We start with a matrix $P$, where each row is an image and each column is a class. 
-$P_{i,j}$ is the probability the model gives to Image $i$ belonging to Class $j$.
-
-### Step 2: Class Thresholds ($T$)
-Cleanlab calculates a threshold for every class. This is the key to its "intelligence".
-For each class $c$, the threshold $t_c$ is the **average probability** the model gave to that class for all images that are *actually labeled* as class $c$.
-
-$$t_c = \frac{1}{|X_c|} \sum_{i \in X_c} P_{i,c}$$
-
-*Why this matters:* If a class is "hard" (e.g., subtle defects), the model might only be 60% confident on average. Cleanlab learns this and won't flag a 60% prediction as an error for that class.
-
-### Step 3: The "Confident Joint" Matrix ($C$)
-This is where we count the "confusion". We build a matrix $C$ (size: Classes x Classes).
-We look at हर Image $i$ that is labeled as Class $A$, but the model is more confident in Class $B$ than Class $B$'s own threshold ($t_B$).
-
-If $P_{i,B} \ge t_B$ and $B$ is the model's top guess, we add 1 to the cell $C_{A,B}$.
-
-### Step 4: Normalization and Pruning
-Finally, Cleanlab converts this count matrix $C$ into a "Joint Distribution of Noise". It uses this to calculate exactly how many images it should remove from each class to clean the dataset without losing too much important data.
-
-**In summary**: Cleanlab doesn't just look for "wrong" guesses; it looks for guesses that are **statistically louder** than the usual noise for that specific category.
+### The Input Variables
+*   $n$: Total number of images in your split.
+*   $k$: Total number of classes (e.g., OK, Defect, None).
+*   $\tilde{y}$: The **"Noisy Label"**. This is the label you provided. It might be wrong.
+*   $P$: The **Probability Matrix** ($n \times k$). For every image $i$ and class $j$, $P_{i,j}$ is the model's "opinion".
+*   $P$ must be **Out-of-Sample**: This is why we use K-Fold. If the model was trained on the image, $P$ is "tainted" and the math fails.
 
 ---
 
-## 7. What do the scores mean?
+### Step 1: Calculating the Thresholds ($t_j$)
+For every class $j$, we calculate a "Self-Confidence Threshold" ($t_j$).
+
+$$t_j = \frac{1}{|X_{\tilde{y}=j}|} \sum_{i \in X_{\tilde{y}=j}} P_{i,j}$$
+
+**Wait, what did we just do?**
+*   We look at all images **you claimed** are Class $j$.
+*   We take the **Mean (Average)** of the model's probability for Class $j$ on those images.
+*   **Why mean?** It scales the threshold to the "hardness" of the class. If "Defect" is a very subtle class, the average confidence might be 0.5. If "OK" is easy, it might be 0.95.
+*   **The Result**: If $P_{i,j} < t_j$, the model is *less* confident than average for that class.
+
+---
+
+### Step 2: The Confident Joint Matrix ($C_{\tilde{y}, y^*}$)
+This is the heart of the algorithm. It's a $k \times k$ matrix that counts how many images belong to a "Confusion Bucket".
+
+#### How we fill $C_{j,l}$:
+For every image $i$:
+1.  Look at its given label ($\tilde{y} = j$).
+2.  Look at the model's prediction. If the model is more confident in Class $l$ than that class's threshold ($P_{i,l} \ge t_l$), we count it as **Confident in Class $l$**.
+3.  If the model is confident in **multiple** classes, we pick the one with the highest probability. Let's call this "True Guess" $y^* = l$.
+4.  We increment the count: $C_{j,l} = C_{j,l} + 1$.
+
+**The Diagonal ($C_{j,j}$)**: These are images where you called it Class $j$, and the model confidently agreed it's Class $j$. (Clean Data).
+**The Off-Diagonal ($C_{j,l}$ where $j \neq l$)**: These are images where you called it Class $j$, but the model is **confidently** certain it is Class $l$. (**Potential Label Errors!**)
+
+---
+
+### Step 3: From Counts to Discovery
+Now that we have the matrix $C$, we know roughly how much noise exists. But which *specific* images are bad?
+
+Cleanlab uses **Rank Pruning**. For every image, it calculates a **Label Quality Score**:
+1.  It compares $P_{i,\tilde{y}}$ (confidence in your label) vs $P_{i,y^*}$ (confidence in the model's best guess).
+2.  It uses the matrix $C$ to determine **how many** images should be removed. For example, if $C_{OK, Defect} = 15$, it will find the 15 "most suspicious" images labeled OK that look like Defect and flag them.
+
+---
+
+### Why is this done this way? (The "Why")
+1.  **Why Thresholds?** It prevents the system from being "bullied" by easy classes. Without $t_j$, an "Easy" class would always look correct and a "Hard" class would always look wrong. Thresholds normalize the playing field.
+2.  **Why the Confident Joint?** It treats noise as a **distribution**. It admits that "Class A is often confused with Class B" and uses that statistical pattern to find the specific outliers.
+3.  **Why K-Fold?** To ensure $P$ represents the model's actual intelligence, not its memory.
+
+---
+
+## 7. Quality Scoring (Final Result)
 Every issue gets a **Quality Score (0 to 1)**:
 *   **CRITICAL (> 0.9)**: The system is ALMOST CERTAIN this is a mistake.
 *   **HIGH (> 0.7)**: Very likely a mistake.
