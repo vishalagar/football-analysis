@@ -161,22 +161,45 @@ We find the average confidence the model has for each class using **your labels*
 ---
 
 ### Step 2: Spotting the "Confident Mistakes"
-Now, we look for images where the model is **more confident** than the "Bar" we just set, but for a **different** label.
+Now, we look for images where the model is **more confident** than the "Bar" (Threshold) we just set.
 
-*   **Image 2**: You said **OK**. But the model is **60% sure it is a DEFECT**. 
-    *   Is 60% higher than the DEFECT Bar (55%)? **YES**.
-    *   **Result**: Flagged as a Label Issue.
-*   **Image 4**: You said **DEFECT**. But the model is **70% sure it is OK**. 
-    *   Is 70% higher than the OK Bar (65%)? **YES**.
-    *   **Result**: Flagged as a Label Issue.
+*   **Image 1**: Label OK. Is Pred OK (0.90) $\ge$ OK Bar (0.65)? **YES**. (Model confidently agrees with you).
+*   **Image 2**: Label OK. Is Pred DEFECT (0.60) $\ge$ DEFECT Bar (0.55)? **YES**. (**Confident Mismatch!**)
+*   **Image 3**: Label DEFECT. Is Pred DEFECT (0.80) $\ge$ DEFECT Bar (0.55)? **YES**. (Model confidently agrees with you).
+*   **Image 4**: Label DEFECT. Is Pred OK (0.70) $\ge$ OK Bar (0.65)? **YES**. (**Confident Mismatch!**)
 
 ---
 
-### Step 3: Why this is better than simple checking
+### Step 3: Building the "Confident Joint Matrix"
+This matrix counts how many images fall into each "Confusion Bucket". We have 2 classes (OK, DEFECT), so it's a 2x2 table.
+
+| | Confident Pred: OK | Confident Pred: DEFECT |
+| :--- | :---: | :---: |
+| **You said: OK** | 1 (Image 1) | **1 (Image 2)** |
+| **You said: DEFECT** | **1 (Image 4)** | 1 (Image 3) |
+
+*   **The Diagonal (1, 1)**: These are images where the model confidently backed up your label.
+*   **The Off-Diagonal (1, 1)**: These are the **Confident Joint** counts of our errors. It tells us we have exactly 1 suspicious OK chip and 1 suspicious DEFECT chip.
+
+---
+
+### Step 4: Counts to Discovery (The Final List)
+"Discovery" is simply the process of taking the off-diagonal counts and pulling those specific images into a list.
+
+1.  The Matrix says: "Count of OK-labeled images that are actually DEFECT is **1**."
+2.  The system looks at all OK images, finds the top **1** most suspicious one (Image 2), and adds it to the **Discovery List**.
+3.  The Matrix says: "Count of DEFECT-labeled images that are actually OK is **1**."
+4.  The system finds the top **1** most suspicious one (Image 4) and adds it to the **Discovery List**.
+
+**Final Result**: You get a report showing Image 2 and Image 4 as "Label Issues".
+
+---
+
+### Why this is better than simple checking
 Look at Image 2 again. The model was 60% sure. 
-*   If we just used a "90% threshold," we would have missed this error.
+*   If we just used a static 90% threshold, we would have missed this error.
 *   If we just used "Prediction != Label," we might flag images where the model is just guessing (51% vs 49%).
-*   **Cleanlab** only flagged it because the 60% was "statistically significant" compared to the average (55%).
+*   **Cleanlab** only flagged it because the 60% was "statistically significant" compared to the average (55%) of that specific class.
 
 ---
 
