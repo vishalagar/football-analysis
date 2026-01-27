@@ -135,9 +135,52 @@ Cleanlab uses **Rank Pruning**. For every image, it calculates a **Label Quality
 2.  **Why the Confident Joint?** It treats noise as a **distribution**. It admits that "Class A is often confused with Class B" and uses that statistical pattern to find the specific outliers.
 3.  **Why K-Fold?** To ensure $P$ represents the model's actual intelligence, not its memory.
 
+## 7. The "4 Chips Story": A Concrete Numeric Example
+If the formulas above are confusing, let's look at exactly what happens with just 4 images.
+
+### The Scene:
+We have 4 images. You've labeled them. We run them through our model (or K-Fold) and get these numbers:
+
+| Image | Your Label | Model Prediction for OK | Model Prediction for DEFECT |
+| :--- | :--- | :--- | :--- |
+| Image 1 | **OK** | 0.90 (90%) | 0.10 (10%) |
+| Image 2 | **OK** | 0.40 (40%) | **0.60 (60%)** |
+| Image 3 | **DEFECT** | 0.20 (20%) | 0.80 (80%) |
+| Image 4 | **DEFECT** | **0.70 (70%)** | 0.30 (30%) |
+
 ---
 
-## 7. Quality Scoring (Final Result)
+### Step 1: Calculate the "Class Bars" (Thresholds)
+We find the average confidence the model has for each class using **your labels**.
+
+*   **OK Bar ($t_{OK}$)**: Look at images you labeled OK (1 and 2). Average their "OK" probabilities: $(0.90 + 0.40) / 2 = \mathbf{0.65}$
+*   **DEFECT Bar ($t_{DEFECT}$)**: Look at images you labeled DEFECT (3 and 4). Average their "DEFECT" probabilities: $(0.80 + 0.30) / 2 = \mathbf{0.55}$
+
+> **Why?** This tells the system: "To be considered a *confident* OK chip, the model must be at least 65% sure."
+
+---
+
+### Step 2: Spotting the "Confident Mistakes"
+Now, we look for images where the model is **more confident** than the "Bar" we just set, but for a **different** label.
+
+*   **Image 2**: You said **OK**. But the model is **60% sure it is a DEFECT**. 
+    *   Is 60% higher than the DEFECT Bar (55%)? **YES**.
+    *   **Result**: Flagged as a Label Issue.
+*   **Image 4**: You said **DEFECT**. But the model is **70% sure it is OK**. 
+    *   Is 70% higher than the OK Bar (65%)? **YES**.
+    *   **Result**: Flagged as a Label Issue.
+
+---
+
+### Step 3: Why this is better than simple checking
+Look at Image 2 again. The model was 60% sure. 
+*   If we just used a "90% threshold," we would have missed this error.
+*   If we just used "Prediction != Label," we might flag images where the model is just guessing (51% vs 49%).
+*   **Cleanlab** only flagged it because the 60% was "statistically significant" compared to the average (55%).
+
+---
+
+## 8. Quality Scoring (Final Result)
 Every issue gets a **Quality Score (0 to 1)**:
 *   **CRITICAL (> 0.9)**: The system is ALMOST CERTAIN this is a mistake.
 *   **HIGH (> 0.7)**: Very likely a mistake.
