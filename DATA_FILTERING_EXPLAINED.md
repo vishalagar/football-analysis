@@ -209,4 +209,63 @@ Every issue gets a **Quality Score (0 to 1)**:
 *   **HIGH (> 0.7)**: Very likely a mistake.
 *   **LOW (< 0.5)**: Might be a mistake, or just a very confusing image.
 
-**Pro-Tip**: Start by fixing the **CRITICAL** issues first. These are the ones where you and the AI disagree the most!
+## 9. The Technical "Sidekicks" (Auxiliary Algorithms)
+Cleanlab is the star of the show, but it needs a supporting cast of other algorithms to work. Here is what they do and why.
+
+---
+
+### A. Feature Extraction (The Foundation)
+Before any math happens, we move from **Images** to **Numbers**.
+*   **What**: We use a pre-trained **ResNet18**.
+*   **How**: We cut off the "Head" of the model and take the last layer of numbers.
+*   **Result**: Every image (no matter how big) becomes a list of **512 numbers**. 
+*   **Why**: You can't do math on "pixels" easily. These 512 numbers are like the **DNA** of the chip—they represent textures, shapes, and defects in a way math models can understand.
+
+---
+
+### B. Outlier Detection (Isolation Forest & LOF)
+Sometimes an image isn't "mislabeled," it's just **garbage** (e.g., a blurry photo, a corrupted file, or a photo of a cat instead of a chip).
+
+1.  **Isolation Forest**: 
+    *   **Logic**: Imagine trying to "isolate" a point by drawing random lines. If a point is in a crowd (normal data), it takes many lines to isolate it. If a point is far away (outlier), it only takes one or two lines.
+    *   **Goal**: Find images that are "lonely" in the feature space.
+2.  **LOF (Local Outlier Factor)**:
+    *   **Logic**: It compares how crowded it is around "Point A" vs. how crowded it is around Point A's neighbors. 
+    *   **Goal**: Find images that are in a "weird spot" compared to their direct neighbors.
+
+---
+
+### C. Cross-Validation (CV) & Logistic Regression
+We need **Probabilities** for the Training set, but we can't use the Best Model (remember the "Cheating" rule?).
+
+1.  **Cross-Validation (The K-Fold Loop)**:
+    *   We split the Training images into 3 piles (Folds).
+    *   **Pile 1 & 2** are used to "teach" a temporary model.
+    *   **Pile 3** is then "tested" by that model.
+    *   We repeat this until every single image has been a "test" image once.
+2.  **Logistic Regression**:
+    *   This is the "Temporary Model" we use in the loop. 
+    *   **Why?** It is extremely fast and very good at handling the 512-number DNA vectors we created. It's essentially a very advanced "best fit line" that outputs probabilities (0 to 1).
+
+---
+
+### D. Cosine Similarity (The Similarity Meter)
+This is a formula used to measure how "close" two images are in their DNA.
+
+*   **Logic**: Instead of measuring distance with a ruler, it measures the **Angle** between the two DNA vectors.
+*   **Uses**:
+    1.  **Duplicates**: If the similarity is > 0.98, the images are basically identical.
+    2.  **Class Centroids**: We find the "Average Vector" for all OK chips. Then we check the similarity of every chip to that average. If an OK chip is very *dissimilar* to its own average, it gets a lower quality score.
+
+---
+
+## 10. Master Summary Table
+
+| Tool | Role | When is it used? |
+| :--- | :--- | :--- |
+| **ResNet18** | DNA Extractor | Every image, first step. |
+| **Isolation Forest** | Garbage Detector | Find outliers that don't belong. |
+| **LogReg + CV** | Probability Generator | For Training Data analysis. |
+| **Best Model** | Probability Generator | For Val/Test Data analysis. |
+| **Cleanlab** | Noise Architect | The brain that finds the label errors. |
+| **Cosine Sim** | Similarity Meter | Find duplicates and measure quality. |

@@ -36,6 +36,23 @@ if HAS_TORCH:
 else:
     DEVICE = "cpu"
 
+def set_seed(seed=42):
+    """Sets the seed for reproducibility."""
+    import random
+    import numpy as np
+    
+    random.seed(seed)
+    np.random.seed(seed)
+    
+    if HAS_TORCH:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            # Ensure deterministic behavior for cuDNN
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+
 def train_epoch(model, loader, criterion, optimizer):
     model.train()
     running_loss = 0.0
@@ -160,6 +177,7 @@ def tune_hyperparameters(n_trials=5):
     return study.best_params
 
 def run_automated_training(full_epochs=300, dataset_train=None, dataset_val=None):
+    set_seed(42) # Ensure reproducible results
     logger.info("Starting Automated Training...")
     
     # Load defaults if not provided
@@ -338,6 +356,7 @@ def auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=None)
     """
     Automatically explores multiple configurations until success or exhaustion.
     """
+    set_seed(42) # Ensure reproducible results
     logger.info("\n🚀 Starting Auto-Exploration...")
 
     
