@@ -725,6 +725,7 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
         return []
     
     results = []
+    # Process Label Issues
     for idx in issues_indices:
         img_path = dataset.files[idx]
         given_label_idx = dataset.labels[idx]
@@ -751,8 +752,6 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
             model_pred = np.argmax(all_probs_model[idx])
             ensemble_pred = np.argmax(ensemble_probs[idx])
             ensemble_agreement = 1.0 if model_pred == ensemble_pred else 0.0
-        
-
 
         results.append({
             "file_path": img_path,
@@ -769,6 +768,76 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
                 "normalized_distance": feature_info["normalized_distance"],
                 "similar_samples": similar_paths,
                 "ensemble_agreement": ensemble_agreement
+            }
+        })
+
+    # 2. Outlier Detection (Ensemble)
+    print(f"Finding outliers in {split_name} (ensemble method)...")
+    outlier_indices = detect_outliers_ensemble(features, all_labels)
+    
+    for idx in outlier_indices:
+        # Avoid duplicate entries if already a label issue
+        if any(r["file_path"] == dataset.files[idx] for r in results):
+            continue
+        
+        # Quality score for outliers based on isolation
+        feature_info = get_feature_space_info(features, all_labels, idx, num_classes)
+        # Higher normalized distance = worse quality
+        quality_score = min(feature_info["normalized_distance"] / 2.0, 1.0)  
+        severity = classify_severity(quality_score)
+        
+        similar_paths = [dataset.files[i] for i in feature_info["similar_samples_indices"][:3]]
+            
+        results.append({
+            "file_path": dataset.files[idx],
+            "issue_type": "outlier",
+            "severity": severity,
+            "quality_score": quality_score,
+            "given_label": dataset.classes[dataset.labels[idx]],
+            "suggested_label": "delete",
+            "confidence": 0.0,  # Outliers don't have prediction confidence
+            "split": split_name,
+            "details": {
+                "prediction_entropy": 0.0,
+                "feature_distance": feature_info["feature_distance"],
+                "normalized_distance": feature_info["normalized_distance"],
+                "similar_samples": similar_paths
+            }
+        })
+    
+    # 3. Near-Duplicate Detection
+    print(f"Finding duplicates in {split_name}...")
+    sim_matrix = cosine_similarity(features)
+    np.fill_diagonal(sim_matrix, 0)
+    duplicate_threshold = ISSUE_DETECTION_CONFIG["duplicate_threshold"]
+    duplicate_indices = []
+    for i in range(len(sim_matrix)):
+        if np.max(sim_matrix[i]) > duplicate_threshold:
+            duplicate_indices.append(i)
+            
+    for idx in duplicate_indices:
+        if any(r["file_path"] == dataset.files[idx] for r in results):
+            continue
+        
+        # Find the most similar image
+        similarities = sim_matrix[idx]
+        most_similar_idx = np.argmax(similarities)
+        similarity_score = similarities[most_similar_idx]
+        
+        results.append({
+            "file_path": dataset.files[idx],
+            "issue_type": "duplicate",
+            "severity": "LOW",  # Duplicates are usually low priority
+            "quality_score": 0.3,  # Fixed low score for duplicates
+            "given_label": dataset.classes[dataset.labels[idx]],
+            "suggested_label": "delete",
+            "confidence": float(similarity_score),
+            "split": split_name,
+            "details": {
+                "prediction_entropy": 0.0,
+                "feature_distance": 0.0,
+                "normalized_distance": 0.0,
+                "similar_samples": [dataset.files[most_similar_idx]]
             }
         })
         

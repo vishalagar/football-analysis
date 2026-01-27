@@ -6,7 +6,7 @@ import shutil
 import zipfile
 from backend.app.services.agent import analyze_situation_and_decide, diagnose_after_exploration
 from backend.app.services.data import apply_fix, get_dataset_stats, CustomImageDataset, detect_issues_with_model
-from backend.app.core.config import TRAIN_DIR, MODELS_DIR, DATASET_DIR
+from backend.app.core.config import TRAIN_DIR, MODELS_DIR, DATASET_DIR, VAL_DIR, TEST_DIR
 from backend.app.services.training import run_automated_training, auto_explore
 from backend.app.schemas.requests import FixRequest, BatchFixRequest, BatchSuggestionRequest
 import threading
@@ -122,18 +122,14 @@ def analyze_dataset_with_model():
          raise HTTPException(status_code=400, detail="No trained model found. Please run benchmarking first.")
          
     # 2. Run Analysis
-    # Ensure usage of new signature (model_path only needed, defaults to train check inside, but we want full check)
-    # Actually, the user asked for "Filter Dataset" which implies finding issues.
-    # The new detect_issues_with_model returns list.
-    # However, in step 164 we changed detect_issues_with_model to take (model_path, split, split_dir).
-    # We should run it for Train and Val here too to be comprehensive?
-    # Or just Train? Usually "Filter" implies Train.
-    
     issues = []
     # Train
     issues.extend(detect_issues_with_model(model_path, "train", TRAIN_DIR))
     # Val
     issues.extend(detect_issues_with_model(model_path, "val", VAL_DIR))
+    # Test
+    if os.path.exists(TEST_DIR):
+        issues.extend(detect_issues_with_model(model_path, "test", TEST_DIR))
     
     if isinstance(issues, dict) and "error" in issues:
          # Backward compat if function returns error dict (it currently returns list or empty list)
