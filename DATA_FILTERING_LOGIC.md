@@ -12,6 +12,34 @@ The system is designed to identify three types of data issues:
 3.  **Duplicates**: Identical or near-identical images that bias validation results.
 
 ### System Diagram
+A simplified logical flow of the entire system:
+
+```mermaid
+graph TD
+    %% Nodes
+    Input[Dataset] --> Split{Split Type?}
+    
+    %% Training Path
+    Split -- Training Data --> CV[Cross-Validation]
+    CV --"Unbiased Probs"--> Detect1[Detect: Labels & Outliers]
+    
+    %% Validation/Test Path
+    Split -- Val/Test Data --> Model[Load Trained Model + Aux]
+    Model --"Ensemble Probs"--> Detect2[Detect: Labels & Outliers]
+    
+    %% Convergence
+    Detect1 --> Merge[Merge All Issues]
+    Detect2 --> Merge
+    
+    Merge --> Score[Calculate Quality Scores]
+    Score --> Filter{Severity Check}
+    
+    Filter -- Critical/High --> Report[Final Report]
+    Filter -- Low/Medium --> Report
+```
+
+### Detailed Architecture Diagram
+
 
 ```mermaid
 flowchart TD
