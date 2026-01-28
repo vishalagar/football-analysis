@@ -13,6 +13,47 @@
     --font-family: 'Outfit', 'Inter', sans-serif;
 }
 
+/* Header Dropdown Logic */
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-content {
+    display: none;
+    position: absolute;
+    right: 0;
+    background-color: #1e293b;
+    min-width: 180px;
+    box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-top: 5px;
+}
+
+.dropdown:hover .dropdown-content {
+    display: block;
+}
+
+.dropdown-content a {
+    color: var(--text-primary);
+    padding: 12px 16px;
+    text-decoration: none;
+    display: block;
+    font-size: 0.85rem;
+    transition: background 0.2s;
+}
+
+.dropdown-content a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.dropdown-content a.danger:hover {
+    background-color: rgba(255, 77, 77, 0.2);
+}
+
 /* Badges */
 .badge {
     font-size: 0.65rem;
@@ -165,15 +206,15 @@ aside {
         grid-template-columns: 1fr;
         grid-template-rows: auto auto 1fr;
     }
-    
+
     aside {
         grid-row: 2;
     }
-    
+
     main {
         grid-row: 3;
     }
-    
+
     body {
         overflow-y: auto;
         height: auto;
@@ -186,13 +227,14 @@ aside {
         gap: 15px;
         text-align: center;
     }
-    
+
     .agent-card div {
         flex-direction: column;
         gap: 15px;
     }
-    
-    .btn-magic, .btn-primary {
+
+    .btn-magic,
+    .btn-primary {
         width: 100%;
     }
 }
