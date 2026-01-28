@@ -26,13 +26,13 @@
                 Agentic AutoML
             </div>
             <div id="status-container" style="display: flex; gap: 15px; align-items: center;">
-                <div class="dropdown" style="position: relative; display: inline-block;">
-                    <button class="dropbtn" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); color: var(--text-secondary); padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; cursor: pointer;">
+                <div class="dropdown">
+                    <button class="dropbtn">
                         ↻ System Reset ▼
                     </button>
-                    <div class="dropdown-content" style="display: none; position: absolute; right: 0; background-color: var(--card-bg); min-width: 160px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 1; border: 1px solid var(--card-border); border-radius: 8px; overflow: hidden;">
-                        <a href="#" onclick="performSoftReset()" style="color: var(--text-primary); padding: 12px 16px; text-decoration: none; display: block; font-size: 0.8rem;">Soft Reset (State Only)</a>
-                        <a href="#" onclick="performHardReset()" style="color: var(--danger-color); padding: 12px 16px; text-decoration: none; display: block; font-size: 0.8rem; border-top: 1px solid var(--card-border);">Hard Reset (Delete All)</a>
+                    <div class="dropdown-content">
+                        <a href="#" onclick="performSoftReset()">Soft Reset (State Only)</a>
+                        <a href="#" onclick="performHardReset()" class="danger-action">Hard Reset (Delete All)</a>
                     </div>
                 </div>
                 <div class="status-badge" id="system-status">System Standby</div>
@@ -41,7 +41,7 @@
 
         <main>
             <!-- Dataset Management -->
-            <section class="agent-card" style="border-left-color: var(--magic-color); margin-bottom: 0;">
+            <section class="agent-card card-magic">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <h2>Dataset Management</h2>
@@ -56,8 +56,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="upload-status"
-                    style="margin-top: 10px; font-size: 0.85rem; text-align: right; min-height: 1.2em;"></div>
+                <div id="upload-status"></div>
             </section>
 
             <!-- AI Agent Analysis Section -->
@@ -143,8 +142,7 @@
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr 300px; gap: 20px;">
-                    <div id="training-logs" class="agent-response"
-                        style="height: 350px; overflow-y: auto; font-size: 0.8rem; margin: 0;">
+                    <div id="training-logs" class="agent-response training-logs-container">
                         Optimization history will appear here...
                     </div>
                     <div id="benchmark-results"
