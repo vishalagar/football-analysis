@@ -833,45 +833,7 @@ window.handleNextStep = handleNextStep;
 window.performSoftReset = performSoftReset;
 window.performHardReset = performHardReset;
 
-async function performSoftReset() {
-    if (confirm("Are you sure you want to perform a soft reset? This will clear current progress but keep uploaded data.")) {
-        try {
-            const res = await fetch(`${API_BASE}/reset_system`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hard_reset: false })
-            });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.detail || "Soft reset failed");
-            }
-            alert("Soft reset successful! Reloading page...");
-            location.reload();
-        } catch (e) {
-            alert(`Soft Reset Failed: ${e.message}`);
-        }
-    }
-}
-
-async function performHardReset() {
-    if (confirm("WARNING: Are you absolutely sure you want to perform a HARD reset? This will clear ALL progress, uploaded data, and cached models. This action cannot be undone.")) {
-        try {
-            const res = await fetch(`${API_BASE}/reset_system`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ hard_reset: true })
-            });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.detail || "Hard reset failed");
-            }
-            alert("Hard reset successful! Reloading page...");
-            location.reload();
-        } catch (e) {
-            alert(`Hard Reset Failed: ${e.message}`);
-        }
-    }
-}
+// [Removed Duplicate Functions]
 
 async function handleNextStep(action) {
     if (action === 'filter_dataset') {
