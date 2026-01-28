@@ -404,7 +404,7 @@ def detect_issues_in_split(split_name, split_dir):
     # Calculate class centroids for quality scoring
     class_centroids = calculate_class_centroids(features, labels, num_classes)
 
-    clf = LogisticRegression(max_iter=100)
+    clf = LogisticRegression(max_iter=1000)
     try:
         pred_probs = cross_val_predict(clf, features, labels, cv=min(3, len(dataset)//2), method="predict_proba")
     except Exception as e:
@@ -701,7 +701,7 @@ def detect_issues_with_model(model_path, split_name="train", split_dir=TRAIN_DIR
         from sklearn.linear_model import LogisticRegression
         try:
             # Train a LogReg on features
-            lr_clf = LogisticRegression(max_iter=200, random_state=42)
+            lr_clf = LogisticRegression(max_iter=1000, random_state=42)
             lr_clf.fit(features, all_labels)
             lr_probs = lr_clf.predict_proba(features)
             
