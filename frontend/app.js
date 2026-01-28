@@ -226,13 +226,20 @@ function displayAgentDecision(decision) {
         </div>
     `;
 
-    if (decision.recommended_action === "data_cleaning") {
+    // Display Cleaning Section if "data_cleaning" recommended OR if issues exist
+    if (decision.recommended_action === "data_cleaning" || (decision.issues_list && decision.issues_list.length > 0)) {
         cleaningSec.style.display = 'block';
         cleaningSec.scrollIntoView({ behavior: 'smooth' });
         renderIssues(decision.issues_list);
+
+        // If the action was "start_training" but we are forcing cleaning view due to issues,
+        // we might want to also ensure the training section is available or hidden.
+        // For now, standard behavior is cleaning blocks training until "Proceed" is clicked.
+        trainingSec.style.display = 'none';
     } else {
         trainingSec.style.display = 'block';
         trainingSec.scrollIntoView({ behavior: 'smooth' });
+        cleaningSec.style.display = 'none';
     }
 }
 

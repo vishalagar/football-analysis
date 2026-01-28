@@ -85,9 +85,9 @@ def analyze_situation_and_decide():
     Goal: Build a high-performance model.
     
     Rules:
-    1. If there are significant label issues (>5), priority is 'data_cleaning'.
-    2. If issues are minimal (<=5), you can recommend 'start_training' but mention the issues in analysis.
-    3. If everything looks perfect, 'start_training'.
+    1. If there are likely label issues (>0), priority is 'data_cleaning' to ensure highest model quality.
+    2. Only if issues are 0, recommend 'start_training'.
+    3. Even if issues are few, cleaning is safer than training on noise.
     
     Respond in JSON format:
     {{
@@ -102,9 +102,9 @@ def analyze_situation_and_decide():
     # 3. Rule-based Fallback if AI fails
     if "Error communicating with Ollama" in response_text:
         print("[INFO] AI unavailable, using rule-based fallback.")
-        if num_issues > 5:
+        if num_issues > 0:
             return {
-                "analysis": "Rule-based analysis: Significant label issues detected. Cleaning required before training.",
+                "analysis": f"Rule-based analysis: Label issues detected ({num_issues}). Cleaning required before training.",
                 "recommended_action": "data_cleaning",
                 "issues_list": issues,
                 "raw_issues_count": num_issues,
@@ -112,7 +112,7 @@ def analyze_situation_and_decide():
             }
         else:
             return {
-                "analysis": "Rule-based analysis: Dataset looks healthy with minimal issues. Recommended to start training.",
+                "analysis": "Rule-based analysis: Dataset looks healthy. Recommended to start training.",
                 "recommended_action": "start_training",
                 "issues_list": issues,
                 "raw_issues_count": num_issues,
@@ -129,6 +129,11 @@ def analyze_situation_and_decide():
             decision['raw_issues_count'] = num_issues
             decision['issues_list'] = issues
             
+            # FORCE OVERRIDE: If issues exist, ensuring cleaning is recommended regardless of LLM "opinion"
+            if num_issues > 0 and decision.get('recommended_action') != 'data_cleaning':
+                 decision['recommended_action'] = 'data_cleaning'
+                 decision['analysis'] += " [System Note: Enforcing data cleaning due to detected issues.]"
+
             if isinstance(detection_result, dict) and "strategy" in detection_result:
                 strategy_info = f"\n\n[Analysis Strategy: {detection_result['strategy']}]"
                 decision['analysis'] = decision.get('analysis', '') + strategy_info
@@ -140,11 +145,11 @@ def analyze_situation_and_decide():
     # Fallback (AI Failed or JSON Invalid)
     print(f"[INFO] Using fallback decision logic. AI Response snippet: {analysis_text[:100]}...")
     
-    fallback_analysis = f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Significant label issues detected ({num_issues}). Cleaning recommended."
+    fallback_analysis = f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Label issues detected ({num_issues}). Cleaning recommended."
     fallback_action = "data_cleaning"
     
-    if num_issues <= 5:
-        fallback_analysis = f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Dataset looks healthy ({num_issues} issues). Training recommended."
+    if num_issues == 0:
+        fallback_analysis = f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Dataset looks healthy. Training recommended."
         fallback_action = "start_training"
 
     return {
