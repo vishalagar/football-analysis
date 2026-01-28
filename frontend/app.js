@@ -805,6 +805,20 @@ async function uploadAndRun() {
 
 // Global scope expose
 window.uploadAndRun = uploadAndRun;
+window.performSoftReset = performSoftReset;
+window.performHardReset = performHardReset;
+// window.toggleSelectAll = toggleSelectAll; // Ensure this is also exposed if used in HTML
+// window.downloadCSV = downloadCSV; // and this
+window.autoFixAll = autoFixAll;
+window.applyBatchFix = applyBatchFix;
+window.skipToBenchmark = skipToBenchmark;
+window.startTraining = startTraining;
+window.evaluateCurrentModel = evaluateCurrentModel;
+window.triggerAnalysis = triggerAnalysis;
+window.downloadCSV = downloadCSV;
+window.toggleSelectAll = toggleSelectAll;
+window.updateSelection = updateSelection;
+window.applyFixSingle = applyFixSingle;
 window.triggerAnalysis = triggerAnalysis;
 window.evaluateCurrentModel = evaluateCurrentModel;
 window.startTraining = startTraining;
