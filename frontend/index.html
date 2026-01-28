@@ -21,6 +21,7 @@
 <body>
 
     <div class="container">
+        <!-- Header -->
         <header>
             <div class="logo">
                 Agentic AutoML
@@ -42,143 +43,166 @@
             </div>
         </header>
 
-        <main>
-            <!-- Dataset Management -->
-            <section class="agent-card" style="border-left-color: var(--magic-color); margin-bottom: 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h2>Dataset Management</h2>
-                        <p style="color: var(--text-secondary); margin-top: 4px;">Upload your dataset zip file to start
-                        </p>
-                    </div>
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <input type="file" id="dataset-upload" accept=".zip"
-                            style="font-size: 0.8rem; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px; border: 1px solid var(--card-border);">
-                        <button class="btn-magic" onclick="uploadAndRun()" id="upload-btn" style="min-width: 180px;">
-                            🚀 Upload & Run
-                        </button>
-                    </div>
-                </div>
-                <div id="upload-status"
-                    style="margin-top: 10px; font-size: 0.85rem; text-align: right; min-height: 1.2em;"></div>
-            </section>
-
-            <!-- AI Agent Analysis Section -->
-            <section class="agent-card">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <div>
-                        <h2>Intelligent Agent Analysis</h2>
-                        <p style="color: var(--text-secondary); margin-top: 8px;">Llama3 analyzing your dataset health
-                            and quality</p>
-                    </div>
-                    <div style="display: flex; gap: 12px;">
-                        <button class="btn-primary" onclick="triggerAnalysis()" id="analyze-btn">
-                            Run Analysis
-                        </button>
-                        <button class="btn-primary" onclick="evaluateCurrentModel()" id="evaluate-btn"
-                            style="background: var(--success-color);">
-                            📊 Evaluate Current Model
-                        </button>
-                    </div>
-                </div>
-                <div id="agent-output" class="agent-response">
-                    Dashbord initiated. Waiting for dataset analysis...
-                </div>
-            </section>
-
-            <!-- Data Cleaning & Issue Management Section -->
-            <section id="cleaning-section" style="display: none;">
-                <div
-                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: rgba(0,0,0,0.2); padding: 16px; border-radius: 16px;">
-                    <div style="display: flex; align-items: center; gap: 16px;">
-                        <h3>Dataset Issues</h3>
-                        <div id="issue-count-pill"
-                            style="background: var(--danger-color); color: white; padding: 2px 10px; border-radius: 10px; font-size: 0.8rem; font-weight: 700;">
-                            0</div>
-
-                        <button class="btn-primary" onclick="downloadCSV()"
-                            style="font-size: 0.75rem; padding: 4px 10px; height: auto; min-height: unset; background: var(--card-bg); border: 1px solid var(--accent-color); color: var(--accent-color);">
-                            ⬇ CSV
-                        </button>
-                    </div>
-
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <button class="btn-magic" onclick="autoFixAll()" id="auto-fix-all-btn">Auto-Fix All
-                            Suggestions</button>
-                        <div style="width: 1px; height: 30px; background: var(--card-border);"></div>
-
-                        <span style="font-size: 0.85rem; color: var(--text-secondary);">Batch Action:</span>
-                        <select id="batch-label-select">
-                            <option value="">Move to...</option>
-                        </select>
-                        <button class="btn-success" onclick="applyBatchFix()" id="batch-apply-btn"
-                            style="min-width: 120px;">Apply to Selected</button>
-
-                        <div style="width: 1px; height: 30px; background: var(--card-border); margin: 0 10px;"></div>
-
-                        <button class="btn-primary" onclick="skipToBenchmark()"
-                            style="background: var(--accent-color); color: white;">Proceed to Benchmark &rarr;</button>
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px; padding-left: 10px;">
-                    <input type="checkbox" id="select-all-issues" onchange="toggleSelectAll()" class="issue-checkbox">
-                    <label for="select-all-issues" style="font-size: 0.9rem; font-weight: 600; cursor: pointer;">Select
-                        All</label>
-                </div>
-
-                <div class="issues-grid" id="issues-container">
-                    <!-- Data cards dynamically loaded here -->
-                </div>
-            </section>
-
-            <!-- AutoML Benchmarking Section -->
-            <section id="training-section" style="display: none;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <div>
-                        <h2>AutoML Benchmarking</h2>
-                        <p style="color: var(--text-secondary); margin-top: 4px;">Evaluating ResNet, MobileNet, and
-                            EfficientNet architectures</p>
-                    </div>
-                    <button class="btn-primary" onclick="startTraining()" id="train-btn">
-                        Start Multi-Model Benchmark
-                    </button>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 300px; gap: 20px;">
-                    <div id="training-logs" class="agent-response"
-                        style="height: 350px; overflow-y: auto; font-size: 0.8rem; margin: 0;">
-                        Optimization history will appear here...
-                    </div>
-                    <div id="benchmark-results"
-                        style="background: rgba(0,0,0,0.2); border-radius: 16px; padding: 15px;">
-                        <h4 style="margin-bottom: 15px; font-size: 0.9rem; color: var(--accent-color);">Leaderboard</h4>
-                        <div id="leaderboard-content" style="font-size: 0.85rem;">
-                            No models trained yet.
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </main>
-
+        <!-- Sidebar (Stats) -->
         <aside>
             <div class="stats-card">
-                <h3
-                    style="margin-bottom: 20px; font-size: 1.1rem; border-bottom: 1px solid var(--card-border); padding-bottom: 10px;">
-                    Dataset Overview</h3>
-                <div id="stats-container">
-                    <p style="color: var(--text-secondary);">Analyzing metadata...</p>
+                <h3>📊 Dataset Stats</h3>
+                <div style="margin-top: 15px;">
+                    <div class="stat-item">
+                        <span>Total Images</span>
+                        <span id="stat-total">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Classes</span>
+                        <span id="stat-classes">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span>Train / Val / Test</span>
+                        <span id="stat-split" style="font-size: 0.8rem;">- / - / -</span>
+                    </div>
+                </div>
+
+                <!-- Batch Controls Area -->
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <h4 style="font-size: 0.9rem; margin-bottom: 10px; color: var(--text-secondary);">Batch Actions</h4>
+
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <!-- Select All Checkbox -->
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem;">
+                            <input type="checkbox" id="select-all-box" onchange="toggleSelectAll()"
+                                style="accent-color: var(--accent-color);">
+                            <label for="select-all-box" style="cursor: pointer; user-select: none;">Select All
+                                Visible</label>
+                        </div>
+
+                        <!-- Batch Action Dropdown -->
+                        <div style="display: flex; gap: 8px;">
+                            <select id="batch-action-select" style="flex: 1; font-size: 0.85rem;">
+                                <option value="" disabled selected>Select Action...</option>
+                                <option value="delete">Delete Selected</option>
+                                <option value="relabel">Relabel Selected To...</option>
+                            </select>
+                        </div>
+
+                        <!-- Target Label Dropdown (Hidden initially) -->
+                        <div id="batch-relabel-container" style="display: none;">
+                            <select id="batch-label-select" style="width: 100%; font-size: 0.85rem;">
+                                <option value="" disabled selected>Choose new label...</option>
+                            </select>
+                        </div>
+
+                        <button onclick="applyBatchFix()" class="btn-primary"
+                            style="width: 100%; padding: 8px; font-size: 0.85rem;">
+                            Apply to Selected (<span id="selected-count">0</span>)
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <div
-                style="margin-top: auto; padding: 20px; text-align: center; background: rgba(139, 92, 246, 0.05); border-radius: 20px; border: 1px dashed rgba(139, 92, 246, 0.2);">
-                <p style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;">Built with <b>Llama3</b>,
-                    <b>Cleanlab</b> & <b>PyTorch</b>
-                </p>
+            <div class="stats-card" style="flex: 1; display: flex; flex-direction: column;">
+                <h3>🏆 Leaderboard</h3>
+                <div id="leaderboard-content" style="margin-top: 15px; overflow-y: auto; flex: 1;">
+                    <p style="color: var(--text-secondary); font-size: 0.9rem;">No models trained yet.</p>
+                </div>
             </div>
         </aside>
+
+        <!-- Main Content -->
+        <main>
+            <!-- 1. Upload Section -->
+            <section id="upload-section">
+                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+                    <div style="background: var(--accent-glow); padding: 10px; border-radius: 12px;">📁</div>
+                    <div>
+                        <h2>Upload Dataset</h2>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem;">Upload a zip file containing 'train'
+                            (and optionally 'val'/'test') folders.</p>
+                    </div>
+                </div>
+
+                <div
+                    style="display: flex; gap: 15px; align-items: center; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 12px; border: 1px dashed var(--card-border);">
+                    <input type="file" id="dataset-upload" accept=".zip" />
+                    <button class="btn-primary" onclick="uploadAndRun()" id="upload-btn">
+                        🚀 Upload & Run
+                    </button>
+                </div>
+                <div id="upload-status" style="margin-top: 15px; font-weight: 500; min-height: 24px;"></div>
+            </section>
+
+            <!-- Agent Output / Diagnosis Area -->
+            <div id="agent-output"></div>
+
+            <!-- 2. Cleaning Section (Hidden initially) -->
+            <section id="cleaning-section" style="display: none; border-left: 4px solid var(--warning-color);">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+                        <div style="background: rgba(255, 152, 0, 0.2); padding: 10px; border-radius: 12px;">🧹</div>
+                        <div>
+                            <h2>Data Cleaning</h2>
+                            <p style="color: var(--text-secondary); font-size: 0.9rem;">Review and fix identified issues
+                                before training.</p>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-primary" onclick="autoFixAll()"
+                            style="font-size: 0.8rem; background: linear-gradient(135deg, #f59e0b, #d97706);">
+                            ⚡ Auto-Fix All (Safe)
+                        </button>
+                        <button class="btn-success" onclick="downloadCSV()" style="font-size: 0.8rem;">
+                            📥 Export Issues CSV
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active Issues Container -->
+                <div id="issues-container" class="issues-grid"></div>
+
+                <div style="margin-top: 30px; display: flex; justify-content: center;">
+                    <button class="btn-magic" style="width: 100%; max-width: 400px;" onclick="skipToBenchmark()">
+                        ✅ Confirm Fixes & Start Training
+                    </button>
+                </div>
+            </section>
+
+            <!-- 3. Training Section (Hidden initially) -->
+            <section id="training-section" style="display: none; border-left: 4px solid var(--success-color);">
+                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
+                    <div style="background: rgba(16, 185, 129, 0.2); padding: 10px; border-radius: 12px;">🏋️</div>
+                    <div>
+                        <h2>AutoML Training</h2>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem;">Autonomous model search and
+                            hyperparameter tuning.</p>
+                    </div>
+                </div>
+
+                <div id="training-logs" class="agent-response" style="height: 300px; overflow-y: auto;">
+                    <div style="color: var(--text-secondary);">Waiting to start...</div>
+                </div>
+
+                <div style="margin-top: 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                        Currently optimizing for: <b>Validation Accuracy</b>
+                    </div>
+                    <!-- Evaluate Button (Appears only after training) -->
+                    <button id="evaluate-btn" class="btn-primary" onclick="evaluateCurrentModel()"
+                        style="display: none;">
+                        📊 Evaluate Best Model
+                    </button>
+                </div>
+            </section>
+
+            <!-- Evaluation Results Modal / Section -->
+            <div id="eval-results-container" style="display: none; margin-top: 20px;"></div>
+
+        </main>
     </div>
+
+    <!-- Footer Credits -->
+    <div style="text-align: center; color: var(--text-secondary); font-size: 0.8rem; padding: 20px; opacity: 0.6;">
+        Powered by <b>Agentic AutoML</b> &bull; Built with <b>FastAPI</b> & <b>PyTorch</b>
+    </div>
+
 </body>
 
 </html>

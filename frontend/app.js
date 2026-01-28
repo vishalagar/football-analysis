@@ -6,50 +6,26 @@ let availableClasses = [];
 let allIssues = [];
 let isTraining = false;
 
-/**
- * Initial Stats & Environment Setup
- */
+// Initial Stats & Environment Setup
 async function fetchStats(shouldRedirect = true) {
     try {
         const res = await fetch(`${API_BASE}/status`);
+        if (!res.ok) throw new Error("Backend not reachable");
         const data = await res.json();
-        renderStats(data.dataset_stats);
+        renderStats(data);
 
-        // Populate available classes for dropdowns
-        const clsRes = await fetch(`${API_BASE}/get_classes`);
-        const clsData = await clsRes.json();
-        availableClasses = clsData.classes || [];
-        updateBatchDropdown();
-
-        // Sync Phase 4 (AutoML) training state if already running
-        if (data.auto_training_state && data.auto_training_state.status !== "idle") {
-            const status = data.auto_training_state.status;
-
-            // Should force show the training section if we have any state
-            // BUT ONLY if allowed to redirect
-            if (shouldRedirect && ["exploring", "diagnosing", "completed", "failed", "waiting_user"].includes(status)) {
-                forceShowTraining();
-            }
-
-            // Only start polling if currently running
-            if (["exploring", "diagnosing"].includes(status)) {
-                if (!isTraining) {
-                    startPollingStatus();
-                }
-            } else {
-                // For static states (completed, failed, waiting_user), just update UI once
-                updateAutoTrainingUI(data.auto_training_state);
-            }
+        // Auto-refresh training status if active
+        if (data.training_active && !isTraining) {
+            startPollingStatus();
         }
     } catch (e) {
-        console.error("Dashboard out of sync:", e);
-        document.getElementById('system-status').innerText = "System Offline";
+        console.error("Failed to fetch stats:", e);
     }
 }
 
 function escapeHtml(text) {
-    if (text === null || text === undefined) return '';
-    return String(text)
+    if (!text) return text;
+    return text
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -58,155 +34,125 @@ function escapeHtml(text) {
 }
 
 function renderStats(stats) {
-    const container = document.getElementById('stats-container');
-    if (!container) return;
+    document.getElementById('stat-total').innerText = stats.total_images || 0;
+    document.getElementById('stat-classes').innerText = stats.num_classes || 0;
+    document.getElementById('stat-split').innerText = `${stats.train_count} / ${stats.val_count} / ${stats.test_count || 0}`;
 
-    let html = '';
-    for (const [split, info] of Object.entries(stats)) {
-        html += `
-            <div class="stat-item">
-                <span style="text-transform: capitalize;">${escapeHtml(split)} Set</span>
-                <span>${escapeHtml(info.count)} samples</span>
-            </div>
-        `;
-    }
-    container.innerHTML = html || '<p>No data found.</p>';
+    availableClasses = stats.classes || [];
+    updateBatchDropdown();
 }
 
 function updateBatchDropdown() {
     const select = document.getElementById('batch-label-select');
-    if (!select) return;
+    if (!select || !availableClasses.length) return;
 
-    // Save current value
-    const curVal = select.value;
-    select.innerHTML = '<option value="">Move to...</option>' +
-        availableClasses.map(cls => `<option value="${escapeHtml(cls)}">${escapeHtml(cls)}</option>`).join('');
-    select.value = curVal;
+    select.innerHTML = '<option value="" disabled selected>Choose new label...</option>';
+    availableClasses.forEach(c => {
+        select.innerHTML += `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`;
+    });
 }
 
-/**
- * Intelligent Agent Integration
- */
+// Intelligent Agent Integration
 async function triggerAnalysis() {
-    const output = document.getElementById('agent-output');
-    const btn = document.getElementById('analyze-btn');
-
-    if (isTraining) return alert("Cannot run analysis while training is active.");
-
-    output.classList.add('pulse');
-    output.innerHTML = "<b>Agent is analyzing dataset gradients and label consistency...</b>";
-    btn.disabled = true;
+    const outputDiv = document.getElementById('agent-output');
+    outputDiv.innerHTML = `<div class="agent-response">🤖 User uploaded data. Analyzing structure and quality...</div>`;
 
     try {
         const res = await fetch(`${API_BASE}/analyze`);
         if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`Server Error (${res.status}): ${errBody.slice(0, 100)}`);
+            const err = await res.json();
+            throw new Error(err.detail || "Analysis failed");
         }
         const decision = await res.json();
         displayAgentDecision(decision);
+
     } catch (e) {
-        output.innerHTML = `<span style="color: var(--danger-color)">Analysis Error: ${e.message}</span>`;
-    } finally {
-        output.classList.remove('pulse');
-        btn.disabled = false;
+        outputDiv.innerHTML = `<div class="agent-response" style="border-color: var(--danger-color);">❌ Error: ${e.message}</div>`;
     }
 }
 
 async function evaluateCurrentModel() {
-    const output = document.getElementById('agent-output');
-    const btn = document.getElementById('evaluate-btn');
+    const evalBtn = document.getElementById('evaluate-btn');
+    const logs = document.getElementById('eval-results-container');
 
-    if (isTraining) return alert("Cannot evaluate while training is active.");
-
-    output.classList.add('pulse');
-    output.innerHTML = "<b>Evaluating current best model...</b>";
-    btn.disabled = true;
+    evalBtn.disabled = true;
+    evalBtn.innerHTML = `<span class="spinner"></span> Evaluating...`;
+    logs.style.display = 'block';
+    logs.innerHTML = `<div class="agent-response">📊 Calculating comprehensive metrics (Miss Rate, Overkill) for current best model...</div>`;
 
     try {
         const res = await fetch(`${API_BASE}/evaluate_current_model`);
         if (!res.ok) {
-            const errBody = await res.text();
-            throw new Error(`Server Error (${res.status}): ${errBody.slice(0, 100)}`);
+            const err = await res.json();
+            throw new Error(err.detail || "Evaluation failed");
         }
         const results = await res.json();
         displayEvaluationResults(results);
     } catch (e) {
-        output.innerHTML = `<span style="color: var(--danger-color)">Evaluation Error: ${e.message}</span>`;
+        logs.innerHTML = `<div class="agent-response" style="border-color: var(--danger-color);">❌ Error: ${e.message}</div>`;
     } finally {
-        output.classList.remove('pulse');
-        btn.disabled = false;
+        evalBtn.disabled = false;
+        evalBtn.innerHTML = `📊 Evaluate Best Model`;
     }
 }
 
 function displayEvaluationResults(results) {
-    const container = document.getElementById('agent-output');
+    const container = document.getElementById('eval-results-container');
 
-    const valMetrics = results.val.metrics;
-    const testMetrics = results.test ? results.test.metrics : null;
+    if (results.error) {
+        container.innerHTML = `<div class="agent-response" style="border-color: var(--danger-color);">❌ Evaluation Error: ${results.error}</div>`;
+        return;
+    }
 
-    container.innerHTML = `
-        <div style="margin-bottom: 12px;">
-            <b style="color: var(--accent-color)">MODEL EVALUATION RESULTS</b>
-        </div>
-        <div style="display: grid; grid-template-columns: ${testMetrics ? '1fr 1fr' : '1fr'}; gap: 20px; margin-top: 15px;">
-            <div style="padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.3);">
-                <h3 style="color: var(--accent-color); margin-bottom: 15px; font-size: 1rem;">Validation Set</h3>
-                <div style="display: grid; gap: 10px; font-size: 0.9rem;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>Accuracy:</span>
-                        <b style="color: var(--success-color)">${(valMetrics.accuracy * 100).toFixed(2)}%</b>
+    const val = results.val_metrics;
+    const test = results.test_metrics;
+
+    let html = `
+        <div class="agent-response" style="background: rgba(15, 23, 42, 0.9); border: 1px solid var(--accent-color);">
+            <h3 style="color: var(--accent-color); margin-bottom: 10px;">📊 Model Evaluation Report</h3>
+            <p style="margin-bottom: 15px; color: var(--text-secondary); font-size: 0.85rem;">
+                Evaluated Model: <b>${results.model_name || 'Best Model'}</b>
+            </p>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <!-- Validation Stats -->
+                <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                    <h4 style="color: var(--warning-color); margin-bottom: 10px; font-size: 0.9rem;">Validation Set</h4>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Accuracy:</span> <b>${(val.accuracy * 100).toFixed(2)}%</b>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>Miss Rate (False Neg):</span> <b>${(val.miss_rate * 100).toFixed(2)}%</b>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
-                        <span>Balanced Acc:</span>
-                        <b>${(valMetrics.balanced_acc * 100).toFixed(2)}%</b>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <span>Miss Rate:</span>
-                        <b style="color: var(--danger-color)">${(valMetrics.miss_rate * 100).toFixed(2)}%</b>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>Overkill Rate:</span>
-                        <b style="color: var(--warning-color)">${(valMetrics.overkill_rate * 100).toFixed(2)}%</b>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>Macro F1:</span>
-                        <b>${(valMetrics.macro_f1 * 100).toFixed(2)}%</b>
+                        <span>Overkill (False Pos):</span> <b>${(val.overkill_rate * 100).toFixed(2)}%</b>
                     </div>
                 </div>
-            </div>
-            ${testMetrics ? `
-            <div style="padding: 15px; background: rgba(34, 197, 94, 0.1); border-radius: 12px; border: 1px solid rgba(34, 197, 94, 0.3);">
-                <h3 style="color: var(--success-color); margin-bottom: 15px; font-size: 1rem;">Test Set</h3>
-                <div style="display: grid; gap: 10px; font-size: 0.9rem;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>Accuracy:</span>
-                        <b style="color: var(--success-color)">${(testMetrics.accuracy * 100).toFixed(2)}%</b>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>Balanced Acc:</span>
-                        <b>${(testMetrics.balanced_acc * 100).toFixed(2)}%</b>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
-                        <span>Miss Rate:</span>
-                        <b style="color: var(--danger-color)">${(testMetrics.miss_rate * 100).toFixed(2)}%</b>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>Overkill Rate:</span>
-                        <b style="color: var(--warning-color)">${(testMetrics.overkill_rate * 100).toFixed(2)}%</b>
-                    </div>
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>Macro F1:</span>
-                        <b>${(testMetrics.macro_f1 * 100).toFixed(2)}%</b>
-                    </div>
+
+                <!-- Test Stats -->
+                <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                    <h4 style="color: var(--success-color); margin-bottom: 10px; font-size: 0.9rem;">Test Set</h4>
+                    ${test ? `
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span>Accuracy:</span> <b>${(test.accuracy * 100).toFixed(2)}%</b>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <span>Miss Rate (False Neg):</span> <b>${(test.miss_rate * 100).toFixed(2)}%</b>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Overkill (False Pos):</span> <b>${(test.overkill_rate * 100).toFixed(2)}%</b>
+                        </div>
+                    ` : '<div style="color: grey; font-style: italic;">No Test Set available</div>'}
                 </div>
             </div>
-            ` : ''}
-        </div>
-        <div style="margin-top: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; font-size: 0.85rem; color: var(--text-secondary);">
-            <b>Model:</b> ${results.model_path ? results.model_path.split(/[\\/]/).pop() : 'best_model.pth'}
+            
+            <div style="margin-top: 15px; font-size: 0.8rem; color: var(--text-secondary); text-align: center;">
+                <i>Metrics weighted by class support. Lower Miss/Overkill is better.</i>
+            </div>
         </div>
     `;
+
+    container.innerHTML = html;
 }
 
 function displayAgentDecision(decision) {
@@ -220,7 +166,7 @@ function displayAgentDecision(decision) {
         </div>
         <div style="padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <b style="color: var(--success-color)">RECOMMENDATION:</b> ${escapeHtml(decision.recommended_action.replace('_', ' '))}
+                <b style="color: var(--success-color)">RECOMMENDATION:</b> ${decision.recommended_action.replace('_', ' ')}
             </div>
             ${decision.recommended_action === "data_cleaning" ? `<button class="btn-success" onclick="skipToBenchmark()" style="padding: 4px 10px; height: auto; min-height: unset; font-size: 0.75rem;">Skip & Continue</button>` : ''}
         </div>
@@ -236,290 +182,310 @@ function displayAgentDecision(decision) {
     }
 }
 
-/**
- * Data Cleaning & Batch Logic
- */
+// Data Cleaning & Batch Logic
 function renderIssues(issues) {
-    allIssues = issues;
+    allIssues = issues || [];
+    selectedIssues.clear();
     const container = document.getElementById('issues-container');
-    const countPill = document.getElementById('issue-count-pill');
+    container.innerHTML = "";
 
-    countPill.innerText = issues.length;
+    document.getElementById('selected-count').innerText = "0";
+    document.getElementById('select-all-box').checked = false;
 
-    if (issues.length === 0) {
-        container.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; padding: 40px; border: 2px dashed var(--card-border); border-radius: 20px;">
-                <h3 style="color: var(--success-color)">✨ Dataset is Clean!</h3>
-                <p style="color: var(--text-secondary)">No further issues detected by the agent.</p>
-                <p style="color: var(--accent-color); margin-top: 20px; font-size: 0.9rem;">
-                    When ready, click <b>"Proceed to Benchmark →"</b> in the toolbar above to continue.
-                </p>
-            </div>
-        `;
+    if (!issues || issues.length === 0) {
+        container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--success-color);">✨ No issues detected! Data looks clean.</div>`;
         return;
     }
 
-    container.innerHTML = issues.map((issue, idx) => `
-        <div class="issue-card" id="card-${idx}">
+    issues.forEach((issue, idx) => {
+        const div = document.createElement('div');
+        div.className = 'issue-card';
+        div.innerHTML = `
             <div style="position: relative;">
-                <input type="checkbox" class="issue-checkbox" 
-                       onchange="updateSelection(${idx}, this.checked)" 
-                       ${selectedIssues.has(issue.file_path) ? 'checked' : ''}
-                       style="position: absolute; top: 15px; left: 15px; z-index: 10;">
-                <img src="/dataset/${escapeHtml(issue.split)}/${escapeHtml(issue.given_label)}/${escapeHtml(fileName(issue.file_path))}?t=${Date.now()}" 
-                     class="issue-img" loading="lazy">
+                <img src="/api/image/${encodeURIComponent(issue.path)}" class="issue-img" loading="lazy">
+                <div style="position: absolute; top: 10px; left: 10px;">
+                    <input type="checkbox" class="issue-checkbox" 
+                           data-idx="${idx}" 
+                           onchange="updateSelection(${idx}, this.checked)">
+                </div>
+                <div style="position: absolute; top: 10px; right: 10px;">
+                   <span class="badge ${issue.issue_type}">${issue.issue_type}</span>
+                </div>
             </div>
             <div class="issue-details">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center;">
-                    <span class="badge ${escapeHtml(issue.issue_type)}">${escapeHtml(issue.issue_type.replace('_', ' ').toUpperCase())}</span>
-                    <span style="font-size: 0.75rem; color: var(--accent-color)">${(issue.confidence * 100).toFixed(0)}% Conf.</span>
+                <h4>${fileName(issue.path)}</h4>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 10px;">
+                    <div>📂 Current: <b>${escapeHtml(issue.label)}</b></div>
+                    ${issue.suggested_label ? `<div>💡 Suggested: <b style="color: var(--accent-color)">${escapeHtml(issue.suggested_label)}</b></div>` : ''}
+                    <div>⚠️ Score: ${(issue.confidence_score * 100).toFixed(1)}%</div>
                 </div>
-                <div style="margin-bottom: 15px;">
-                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px;">Current: <span style="color: var(--danger-color); font-weight: 600;">${escapeHtml(issue.given_label)}</span></p>
-                    <p style="font-size: 0.8rem; color: var(--text-secondary);">Suggest: <span style="color: ${issue.suggested_label === 'delete' ? 'var(--danger-color)' : 'var(--success-color)'}; font-weight: 600;">${escapeHtml(issue.suggested_label.toUpperCase())}</span></p>
+                
+                <div style="display: flex; gap: 8px;">
+                     ${issue.suggested_label ? `
+                        <button class="btn-primary" style="flex: 1; padding: 6px; font-size: 0.75rem;" onclick="applyFixSingle(${idx}, 'relabel')">
+                            Accept Fix
+                        </button>
+                    ` : ''}
+                    <button class="btn-danger" style="flex: 1; padding: 6px; font-size: 0.75rem;" onclick="applyFixSingle(${idx}, 'delete')">
+                        Delete
+                    </button>
                 </div>
-                <select id="select-${idx}" style="margin-bottom: 12px;">
-                    ${availableClasses.map(cls => `<option value="${escapeHtml(cls)}" ${cls === issue.suggested_label ? 'selected' : ''}>${escapeHtml(cls)}</option>`).join('')}
-                </select>
-                <div class="actions">
-                    <button class="btn-success" onclick="applyFixSingle(${idx}, 'move')" style="padding: 6px;">Move</button>
-                    <button class="btn-danger" onclick="applyFixSingle(${idx}, 'delete')" style="padding: 6px;">Delete</button>
+                 <div style="margin-top: 8px; text-align: center;">
+                    <button style="background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-secondary); width: 100%; font-size: 0.7rem; padding: 4px;" onclick="applyFixSingle(${idx}, 'ignore')">
+                        Ignore Issue
+                    </button>
                 </div>
             </div>
-        </div>
-    `).join('');
+        `;
+        container.appendChild(div);
+    });
+
+    // Handle batch dropdown visibility
+    const actionSelect = document.getElementById('batch-action-select');
+    const relabelContainer = document.getElementById('batch-relabel-container');
+
+    actionSelect.onchange = (e) => {
+        relabelContainer.style.display = e.target.value === 'relabel' ? 'block' : 'none';
+        if (e.target.value === 'relabel') {
+            updateBatchDropdown();
+        }
+    };
 }
 
 function fileName(path) {
-    return path.split(/[\\/]/).pop();
+    return path.split('\\').pop().split('/').pop();
 }
 
 function updateSelection(idx, isChecked) {
-    const path = allIssues[idx].file_path;
-    if (isChecked) selectedIssues.add(path);
-    else selectedIssues.delete(path);
+    if (isChecked) selectedIssues.add(idx);
+    else selectedIssues.delete(idx);
+
+    document.getElementById('selected-count').innerText = selectedIssues.size;
+
+    // Update master checkbox state
+    const allBox = document.getElementById('select-all-box');
+    allBox.indeterminate = selectedIssues.size > 0 && selectedIssues.size < allIssues.length;
+    allBox.checked = selectedIssues.size === allIssues.length && allIssues.length > 0;
 }
 
 function toggleSelectAll() {
-    const masterCb = document.getElementById('select-all-issues');
-    const cbs = document.querySelectorAll('.issue-checkbox');
+    const isChecked = document.getElementById('select-all-box').checked;
+    const checkboxes = document.querySelectorAll('.issue-checkbox');
 
     selectedIssues.clear();
-    cbs.forEach((cb, idx) => {
-        cb.checked = masterCb.checked;
-        if (masterCb.checked) selectedIssues.add(allIssues[idx].file_path);
+    checkboxes.forEach(cb => {
+        cb.checked = isChecked;
+        if (isChecked) selectedIssues.add(parseInt(cb.dataset.idx));
     });
+
+    document.getElementById('selected-count').innerText = selectedIssues.size;
 }
 
 async function applyBatchFix() {
-    const targetLabel = document.getElementById('batch-label-select').value;
-    if (selectedIssues.size === 0) return alert("Select items first!");
-    if (!targetLabel) return alert("Select a target move label!");
+    const action = document.getElementById('batch-action-select').value;
+    if (!action) return alert("Please select an action first.");
+    if (selectedIssues.size === 0) return alert("No items selected.");
+
+    let targetLabel = null;
+    if (action === 'relabel') {
+        targetLabel = document.getElementById('batch-label-select').value;
+        if (!targetLabel) return alert("Please choose a target label.");
+    }
+
+    if (!confirm(`Apply '${action}' to ${selectedIssues.size} items?`)) return;
+
+    // Collect fixes
+    const fixes = [];
+    selectedIssues.forEach(idx => {
+        const issue = allIssues[idx];
+        fixes.push({
+            path: issue.path,
+            action: action === 'delete' ? 'delete' : 'move',
+            new_label: action === 'relabel' ? targetLabel : null
+        });
+    });
 
     try {
-        const res = await fetch(`${API_BASE}/batch_fix`, {
+        const res = await fetch(`${API_BASE}/fix_issues`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                file_paths: Array.from(selectedIssues),
-                action: 'move',
-                new_label: targetLabel
-            })
+            body: JSON.stringify(fixes)
         });
 
         if (res.ok) {
-            allIssues = allIssues.filter(i => !selectedIssues.has(i.file_path));
-            selectedIssues.clear();
-            renderIssues(allIssues);
-            fetchStats(false);
+            alert("Batch fix applied successfully!");
+            // Refresh analysis
+            triggerAnalysis();
+        } else {
+            alert("Batch fix failed. See console.");
         }
     } catch (e) {
-        alert("Batch fix failed: " + e.message);
+        console.error(e);
+        alert("Error applying batch fix.");
     }
 }
 
-async function downloadCSV() {
-    if (allIssues.length === 0) return alert("No issues to download!");
+function downloadCSV() {
+    if (!allIssues.length) return alert("No issues to export.");
 
-    try {
-        const res = await fetch(`${API_BASE}/download_issues_csv_file`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ issues: allIssues })
-        });
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "FilePath,Type,CurrentLabel,SuggestedLabel,Confidence\n";
 
-        if (res.ok) {
-            const blob = await res.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = "detected_issues.csv";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-        } else {
-            alert("Download failed");
-        }
-    } catch (e) {
-        alert("Error downloading CSV: " + e.message);
-    }
+    allIssues.forEach(row => {
+        csvContent += `${row.path},${row.issue_type},${row.label},${row.suggested_label || ''},${row.confidence_score}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "dataset_issues.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 async function autoFixAll() {
-    if (allIssues.length === 0) return;
-    if (!confirm(`Apply all ${allIssues.length} logical suggestions?`)) return;
+    if (!confirm("Auto-Fix will automatically apply the AI's top suggestion for ALL detected issues.\n\nAre you sure?")) return;
+
+    const fixes = allIssues.map(issue => ({
+        path: issue.path,
+        action: issue.suggested_label ? 'move' : 'delete', // Default to delete if no suggestion (e.g. outlier) - logic can be refined
+        new_label: issue.suggested_label
+    }));
 
     try {
-        const items = allIssues.map(i => ({ file_path: i.file_path, new_label: i.suggested_label }));
-        const res = await fetch(`${API_BASE}/batch_fix_suggestions`, {
+        const res = await fetch(`${API_BASE}/fix_issues`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items })
+            body: JSON.stringify(fixes)
         });
-
         if (res.ok) {
-            allIssues = [];
-            selectedIssues.clear();
-            renderIssues([]);
-            fetchStats(false);
+            alert("Auto-Fix Complete! Re-running analysis...");
+            triggerAnalysis();
         }
     } catch (e) {
-        alert("Auto-fix failed");
+        alert("Auto-fix failed: " + e.message);
     }
 }
 
 async function applyFixSingle(idx, action) {
     const issue = allIssues[idx];
-    const newLabel = document.getElementById(`select-${idx}`).value;
+    const fix = {
+        path: issue.path,
+        action: action === 'relabel' ? 'move' : (action === 'delete' ? 'delete' : 'ignore'),
+        new_label: action === 'relabel' ? issue.suggested_label : null
+    };
+
+    if (action === 'ignore') {
+        // Just remove from UI locally
+        document.querySelector(`.issue-card:nth-child(${idx + 1})`).style.opacity = '0.3';
+        return;
+    }
 
     try {
-        const res = await fetch(`${API_BASE}/fix_issue`, {
+        const res = await fetch(`${API_BASE}/fix_issues`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_path: issue.file_path, action, new_label: newLabel })
+            body: JSON.stringify([fix])
         });
-
         if (res.ok) {
-            allIssues.splice(idx, 1);
-            selectedIssues.delete(issue.file_path);
-            renderIssues(allIssues);
-            fetchStats(false);
+            // Remove card or update UI
+            const card = document.querySelectorAll('.issue-card')[idx]; // This might be brittle if array shifts
+            // Better to refresh analysis for correctness
+            triggerAnalysis();
         }
     } catch (e) {
-        alert("Action failed");
+        alert("Fix failed: " + e.message);
     }
 }
 
 function skipToBenchmark() {
     const cleaningSec = document.getElementById('cleaning-section');
     const trainingSec = document.getElementById('training-section');
+
     cleaningSec.style.display = 'none';
     trainingSec.style.display = 'block';
-    trainingSec.scrollIntoView({ behavior: 'smooth' });
+
+    // Auto-start training
+    startTraining();
 }
 
 function forceShowTraining() {
-    skipToBenchmark();
+    document.getElementById('training-section').style.display = 'block';
+    document.getElementById('cleaning-section').style.display = 'none';
 }
 
 
-/**
- * AutoML Benchmarking Logic
- */
+// AutoML Benchmarking Logic
 async function startTraining() {
-    if (isTraining) return;
+    const logs = document.getElementById('training-logs');
+    document.getElementById('evaluate-btn').style.display = 'none'; // Hide eval button until done
+    logs.innerHTML = `<div style="color: var(--accent-color);">🚀 Starting AutoML process...</div>`;
 
     try {
-        const res = await fetch(`${API_BASE}/start_auto_training`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/train_auto`);
+        const data = await res.json();
 
-        if (!res.ok) {
-            const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }));
-
-            // Check if the error is about training already in progress
-            if (res.status === 400 && errorData.detail && errorData.detail.includes('already in progress')) {
-                // Offer to reset the stuck state
-                const shouldReset = confirm(
-                    `${errorData.detail}\n\n` +
-                    `It seems the training state is stuck. No actual training is running.\n\n` +
-                    `Would you like to reset the training state and try again?`
-                );
-
-                if (shouldReset) {
-                    await resetTrainingState();
-                    // Try starting again after reset
-                    await startTraining();
-                }
-            } else {
-                alert(`Failed to start training: ${errorData.detail || 'Unknown error'}`);
-            }
-            return;
+        if (data.status === "started") {
+            startPollingStatus();
+        } else {
+            logs.innerHTML += `<div style="color: var(--danger-color);">❌ Failed to start: ${data.message}</div>`;
         }
-
-        startPollingStatus();
     } catch (e) {
-        alert(`Could not initiate benchmarking: ${e.message}`);
+        logs.innerHTML += `<div style="color: var(--danger-color);">❌ Error: ${e.message}</div>`;
     }
 }
 
 async function resetTrainingState() {
     try {
-        const res = await fetch(`${API_BASE}/reset_training_state`, { method: 'POST' });
-        const data = await res.json();
-
-        if (res.ok) {
-            console.log(`Training state reset: ${data.message}`);
-            // Refresh the UI
-            await fetchStats();
-        } else {
-            alert('Failed to reset training state');
-        }
+        await fetch(`${API_BASE}/reset_training_state`, { method: 'POST' });
+        document.getElementById('training-logs').innerHTML = "State reset.";
+        document.getElementById('leaderboard-content').innerHTML = "";
     } catch (e) {
-        alert(`Error resetting state: ${e.message}`);
+        console.error("Reset failed", e);
     }
 }
 
 async function performSoftReset() {
-    if (!confirm("Soft Reset: This will clear current training state and logs from the dashboard. Your Data and Models will be preserved.\n\nProceed?")) return;
-
-    try {
-        const res = await fetch(`${API_BASE}/reset_training_state?force_delete=true`, { method: 'POST' }); // force_delete here clears metrics.json
-        const data = await res.json();
-
-        if (res.ok) {
-            alert("Soft Reset Complete! Dashboard will reload.");
-            window.location.reload();
-        } else {
-            alert('Failed to reset: ' + data.detail);
+    if (confirm("Are you sure you want to perform a soft reset? This will clear current progress but keep uploaded data.")) {
+        try {
+            const res = await fetch(`${API_BASE}/reset_system`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hard_reset: false })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "Soft reset failed");
+            }
+            alert("Soft reset successful! Reloading page...");
+            location.reload();
+        } catch (e) {
+            alert(`Soft Reset Failed: ${e.message}`);
         }
-    } catch (e) {
-        alert(`Error: ${e.message}`);
     }
 }
 
 async function performHardReset() {
-    const confirmation = prompt("⚠️ HARD RESET WARNING ⚠️\n\nThis will DELETE ALL:\n- Uploaded Datasets\n- Trained Models\n- Logs\n\nThis action cannot be undone.\n\nType 'DELETE' to confirm:");
-
-    if (confirmation !== 'DELETE') {
-        if (confirmation !== null) alert("Reset cancelled. You must type 'DELETE' exactly.");
-        return;
-    }
-
-    try {
-        const res = await fetch(`${API_BASE}/reset_training_state?hard_reset=true`, { method: 'POST' });
-        const data = await res.json();
-
-        if (res.ok) {
-            alert("Hard Reset Successful. System is essentially brand new.");
-            window.location.reload();
-        } else {
-            alert('Failed to hard reset: ' + data.detail);
+    if (confirm("WARNING: Are you absolutely sure you want to perform a HARD reset? This will clear ALL progress, uploaded data, and cached models. This action cannot be undone.")) {
+        try {
+            const res = await fetch(`${API_BASE}/reset_system`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hard_reset: true })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "Hard reset failed");
+            }
+            alert("Hard reset successful! Reloading page...");
+            location.reload();
+        } catch (e) {
+            alert(`Hard Reset Failed: ${e.message}`);
         }
-    } catch (e) {
-        alert(`Error: ${e.message}`);
     }
 }
 
-// Deprecated but kept to avoid breakages if called elsewhere
 function fullSystemReset() {
     performSoftReset();
 }
@@ -527,11 +493,9 @@ function fullSystemReset() {
 
 function startPollingStatus() {
     isTraining = true;
-    const btn = document.getElementById('train-btn');
+    const btn = document.getElementById('upload-btn'); // If exists
     const statusBadge = document.getElementById('system-status');
-    btn.disabled = true;
-    document.getElementById('analyze-btn').disabled = true;
-    btn.innerHTML = `<span class="spinner"></span> Benchmarking...`;
+    // btn.disabled = true; 
     statusBadge.innerText = "Auto-Benchmarking Active";
     statusBadge.classList.add('pulse');
 
@@ -542,37 +506,20 @@ function startPollingStatus() {
 
             updateAutoTrainingUI(state);
 
-            // Stop polling when training is truly complete or failed
-            // Keep polling during 'diagnosing' as it's a transient state
-            if (["completed", "failed", "waiting_user"].includes(state.status)) {
+            if (state.status === "completed" || state.status === "failed") {
                 clearInterval(interval);
                 isTraining = false;
-                btn.disabled = false;
-                btn.innerText = "Start Multi-Model Benchmark";
-                statusBadge.innerText = "System Standby";
+                statusBadge.innerText = state.status === "completed" ? "System Ready" : "System Error";
                 statusBadge.classList.remove('pulse');
-                fetchStats(false);
-                document.getElementById('analyze-btn').disabled = false;
+
+                // Show eval button if completed
+                if (state.status === "completed") {
+                    document.getElementById('evaluate-btn').style.display = 'inline-flex';
+                }
             }
         } catch (e) {
-            console.error("Polling error:", e);
-            clearInterval(interval);
-            isTraining = false;
-
-            // Reset UI on error so it doesn't get stuck
-            const btn = document.getElementById('train-btn');
-            const statusBadge = document.getElementById('system-status');
-
-            if (btn) {
-                btn.disabled = false;
-                btn.innerText = "Start Multi-Model Benchmark";
-            }
-            if (statusBadge) {
-                statusBadge.innerText = "System Standby";
-                statusBadge.classList.remove('pulse');
-            }
-            const analyzeBtn = document.getElementById('analyze-btn');
-            if (analyzeBtn) analyzeBtn.disabled = false;
+            console.error("Polling error", e);
+            // Don't stop polling immediately on one error, but maybe log it
         }
     }, 2000);
 }
@@ -609,10 +556,9 @@ function updateAutoTrainingUI(state) {
             </div>
         `;
     } else if (state.status === "completed") {
-        // Safely handle exploration_results
         const explorationResults = state.exploration_results || {};
         const best = explorationResults.best_result || null;
-        const results = explorationResults.all_results || state.results || [];
+        const results = explorationResults.all_results || state.results || []; // Fallback
 
         if (best) {
             logs.innerHTML = `
@@ -630,15 +576,6 @@ function updateAutoTrainingUI(state) {
                             <div style="display:flex; justify-content:space-between;"><span>Overkill:</span> <b>${(best.overkill_rate * 100).toFixed(1)}%</b></div>
                         </div>
                     </div>
-                    ${best.test_metrics ? `
-                    <div>
-                        <b style="color: var(--success-color)">Test Set</b>
-                        <div style="margin-top: 5px;">
-                            <div style="display:flex; justify-content:space-between;"><span>Miss:</span> <b>${(best.test_metrics.miss_rate * 100).toFixed(1)}%</b></div>
-                            <div style="display:flex; justify-content:space-between;"><span>Overkill:</span> <b>${(best.test_metrics.overkill_rate * 100).toFixed(1)}%</b></div>
-                        </div>
-                    </div>
-                    ` : '<div style="color: var(--text-secondary); font-style: italic;">No Test Set Found</div>'}
                 </div>
             `;
 
@@ -665,57 +602,11 @@ function updateAutoTrainingUI(state) {
             if (results.length > 0) {
                 leaderboard.innerHTML = results.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
                     <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                        <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name || 'Model ' + (i + 1)}</span>
-                        <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
-                    </div>
-                `).join('');
-            } else {
-                leaderboard.innerHTML = '<p style="color: var(--text-secondary);">No evaluation history available.</p>';
-            }
-        } else {
-            // Fallback if no best_result found
-            logs.innerHTML = `
-                <div style="color: var(--success-color); font-weight: 700;">✅ TRAINING COMPLETE</div>
-                <p style="margin-top: 15px; color: var(--text-secondary);">Best model saved. Results available in logs.</p>
-            `;
-            leaderboard.innerHTML = '<p style="color: var(--text-secondary);">Evaluation results shown here.</p>';
-        }
-    } else if (state.status === "diagnosing") {
-        // Show diagnosis results
-        const explorationResults = state.exploration_results || {};
-        const best = explorationResults.best_result || null;
-        const diagnosis = state.diagnosis || {};
-
-        if (best) {
-            logs.innerHTML = `
-                <div style="color: var(--warning-color); font-weight: 700;">🔍 DIAGNOSIS COMPLETE</div>
-                <h1 style="margin: 15px 0;">${(best.val_acc * 100).toFixed(1)}% <small style="font-size: 0.5em; color: var(--text-secondary)">Achieved</small></h1>
-                <div style="margin-top: 15px; padding: 15px; background: rgba(251, 191, 36, 0.1); border-left: 3px solid var(--warning-color); border-radius: 8px;">
-                    <p style="margin-bottom: 10px;"><b>Model:</b> ${best.config_name || 'Best Model'}</p>
-                    <p style="margin-bottom: 10px;"><b>Train Acc:</b> ${(best.train_acc * 100).toFixed(1)}%</p>
-                    <p style="margin-bottom: 10px;"><b>Miss Rate:</b> ${(best.miss_rate * 100).toFixed(1)}%</p>
-                    <p><b>Overkill Rate:</b> ${(best.overkill_rate * 100).toFixed(1)}%</p>
-                </div>
-                ${diagnosis.recommendation ? `
-                    <div style="margin-top: 20px; padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 8px;">
-                        <p style="color: var(--accent-color); font-weight: 600; margin-bottom: 8px;">💡 Agent Recommendation:</p>
-                        <p style="font-size: 0.9rem;">${diagnosis.recommendation}</p>
-                    </div>
-                ` : ''}
-            `;
-
-            // Update leaderboard
-            const results = explorationResults.all_results || [];
-            if (results.length > 0) {
-                leaderboard.innerHTML = results.sort((a, b) => b.val_acc - a.val_acc).map((run, i) => `
-                    <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);">
-                        <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i === 0 ? '👑' : i + 1}. ${run.config_name || 'Model ' + (i + 1)}</span>
+                        <span style="font-size: 0.8rem; color: ${i === 0 ? 'var(--warning-color)' : 'inherit'}">${i + 1}. ${run.config_name || 'Model ' + (i + 1)}</span>
                         <span style="font-weight: 600;">${(run.val_acc * 100).toFixed(1)}%</span>
                     </div>
                 `).join('');
             }
-        } else {
-            logs.innerHTML = `<div style="color: var(--warning-color);">🔍 Analyzing results...</div>`;
         }
     } else if (state.status === "failed") {
         logs.innerHTML = `<div style="color: var(--danger-color)">❌ Benchmarking failed: ${state.error}</div>`;
@@ -832,6 +723,7 @@ async function handleNextStep(action) {
         }
     }
 }
+
 
 // Global scope expose
 window.uploadAndRun = uploadAndRun;
