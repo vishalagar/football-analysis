@@ -120,6 +120,9 @@ class CustomImageDataset(Dataset):
             if HAS_TORCH:
                 image = torch.zeros((3, 224, 224))
             else:
+                # If torch is not available, we can't return a tensor.
+                # Returning None might still be unsafe if not handled, but 
+                # without torch we are likely not in a training loop.
                 image = None
         
         label = self.labels[idx]

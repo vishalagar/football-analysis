@@ -22,6 +22,9 @@ training_state = {
     "result": None
 }
 
+# Global Lock for Thread Safety
+state_lock = threading.Lock()
+
 # Phase 4: Auto-Training State
 auto_training_state = {
     "status": "idle",
@@ -73,12 +76,14 @@ def restore_state():
 restore_state()
 
 @router.get("/status")
+@router.get("/status")
 def get_system_status():
-    return {
-        "dataset_stats": get_dataset_stats(),
-        "training_state": training_state,
-        "auto_training_state": auto_training_state
-    }
+    with state_lock:
+        return {
+            "dataset_stats": get_dataset_stats(),
+            "training_state": training_state,
+            "auto_training_state": auto_training_state
+        }
 
 @router.get("/debug_config")
 def debug_server_config():
@@ -273,16 +278,21 @@ def download_issues_csv_file(req: CsvDownloadRequest):
 
 def run_training_background():
     global training_state
-    training_state["status"] = "running"
-    training_state["progress"] = []
+def run_training_background():
+    global training_state
+    with state_lock:
+        training_state["status"] = "running"
+        training_state["progress"] = []
     
     try:
         result = run_automated_training()
-        training_state["result"] = result
-        training_state["status"] = "completed"
+        with state_lock:
+            training_state["result"] = result
+            training_state["status"] = "completed"
     except Exception as e:
-        training_state["status"] = "failed"
-        training_state["error"] = str(e)
+        with state_lock:
+            training_state["status"] = "failed"
+            training_state["error"] = str(e)
 
 @router.post("/start_training")
 def start_training_endpoint():
@@ -327,7 +337,17 @@ async def upload_dataset(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         
         # Extract fully to temp dir
+        # Extract fully to temp dir
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            # Security: Zip Slip Protection
+            for member in zip_ref.namelist():
+                # Resolve the absolute path of the extraction
+                abs_target = os.path.abspath(os.path.join(temp_extract_dir, member))
+                abs_root = os.path.abspath(temp_extract_dir)
+                # Check if the extraction path is within the target directory
+                if not abs_target.startswith(abs_root):
+                    raise HTTPException(status_code=400, detail="Security Error: Zip Slip vulnerability detected in archive.")
+            
             zip_ref.extractall(temp_extract_dir)
         
         # Smart Search: Find the directory containing 'train' (case-insensitive)
@@ -405,18 +425,22 @@ def run_auto_exploration_background():
     global auto_training_state
     
     try:
-        auto_training_state["status"] = "exploring"
-        auto_training_state["iteration"] += 1
+        with state_lock:
+            auto_training_state["status"] = "exploring"
+            auto_training_state["iteration"] += 1
         
         print(f"\n[AUTO] Starting auto-exploration (Iteration {auto_training_state['iteration']})...")
         
         def progress_cb(status_dict):
             global auto_training_state
-            auto_training_state.update(status_dict)
+            with state_lock:
+                auto_training_state.update(status_dict)
             
         # Run exploration with callback
         results = auto_explore(target_accuracy=0.90, max_time_hours=2, progress_callback=progress_cb)
-        auto_training_state["exploration_results"] = results
+        
+        with state_lock:
+            auto_training_state["exploration_results"] = results
         
         if results["status"] == "failed":
             error_msg = results.get('error', 'Unknown trainer error')
@@ -425,20 +449,25 @@ def run_auto_exploration_background():
 
         if results["status"] == "success":
             # Success! Training achieved target
-            auto_training_state["status"] = "completed"
-            if results.get("best_result") and "val_acc" in results["best_result"]:
-                auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            with state_lock:
+                auto_training_state["status"] = "completed"
+                if results.get("best_result") and "val_acc" in results["best_result"]:
+                    auto_training_state["best_acc"] = results["best_result"]["val_acc"]
         else:
             # Need diagnosis
-            auto_training_state["status"] = "diagnosing"
-            diagnosis = diagnose_after_exploration(results)
-            auto_training_state["diagnosis"] = diagnosis
+            with state_lock:
+                auto_training_state["status"] = "diagnosing"
             
-            # After diagnosis, transition to completed state
-            # (Diagnosis is informational only, training is done)
-            auto_training_state["status"] = "completed"
-            if results.get("best_result") and "val_acc" in results["best_result"]:
-                auto_training_state["best_acc"] = results["best_result"]["val_acc"]
+            diagnosis = diagnose_after_exploration(results)
+            
+            with state_lock:
+                auto_training_state["diagnosis"] = diagnosis
+                
+                # After diagnosis, transition to completed state
+                # (Diagnosis is informational only, training is done)
+                auto_training_state["status"] = "completed"
+                if results.get("best_result") and "val_acc" in results["best_result"]:
+                    auto_training_state["best_acc"] = results["best_result"]["val_acc"]
             
             # Legacy logic for special cases (kept for reference but won't execute now)
             # Check if we should ask user or continue
@@ -454,8 +483,9 @@ def run_auto_exploration_background():
             #     auto_training_state["status"] = "completed"
                 
     except Exception as e:
-        auto_training_state["status"] = "failed"
-        auto_training_state["error"] = str(e)
+        with state_lock:
+            auto_training_state["status"] = "failed"
+            auto_training_state["error"] = str(e)
         print(f"[ERROR] Auto-exploration failed: {e}")
         import traceback
         traceback.print_exc()
@@ -474,22 +504,23 @@ def start_auto_training():
     
     
     # Reset state by clearing and updating (maintain reference)
-    auto_training_state.clear()
-    auto_training_state.update({
-        "status": "exploring",
-        "current_config": 0,
-        "total_configs": 0,
-        "current_trial": 0,
-        "total_trials": 0,
-        "results": [],
-        "best_acc": 0.0,
-        "current_epoch": 0,
-        "total_epochs": 0,
-        "exploration_results": None,
-        "diagnosis": None,
-        "iteration": 0,
-        "max_iterations": 3
-    })
+    with state_lock:
+        auto_training_state.clear()
+        auto_training_state.update({
+            "status": "exploring",
+            "current_config": 0,
+            "total_configs": 0,
+            "current_trial": 0,
+            "total_trials": 0,
+            "results": [],
+            "best_acc": 0.0,
+            "current_epoch": 0,
+            "total_epochs": 0,
+            "exploration_results": None,
+            "diagnosis": None,
+            "iteration": 0,
+            "max_iterations": 3
+        })
     
     t = threading.Thread(target=run_auto_exploration_background)
     t.start()
@@ -500,7 +531,9 @@ def start_auto_training():
 def get_auto_training_status():
     """Returns current auto-training state for frontend polling."""
     # Include stats for dashboard sync
-    state = auto_training_state.copy()
+    with state_lock:
+        state = auto_training_state.copy()
+        
     state["dataset_stats"] = get_dataset_stats()
     return state
 
@@ -522,13 +555,15 @@ def handle_user_feedback(action: str):
     
     if action == "recleaned":
         # User cleaned data, restart exploration
-        auto_training_state["status"] = "exploring"
+        with state_lock:
+            auto_training_state["status"] = "exploring"
         t = threading.Thread(target=run_auto_exploration_background)
         t.start()
         return {"status": "restarted", "message": "Restarting exploration with cleaned data"}
     elif action == "satisfied":
         # User is satisfied, mark as complete
-        auto_training_state["status"] = "completed"
+        with state_lock:
+            auto_training_state["status"] = "completed"
         return {"status": "completed", "message": "Marked as complete"}
     else:
         return {"status": "unknown_action"}
@@ -544,20 +579,23 @@ def reset_training_state(force_delete: bool = False):
     current_status = auto_training_state["status"]
     
     # Reset to initial idle state
-    auto_training_state = {
-        "status": "idle",
-        "current_config": 0,
-        "total_configs": 0,
-        "current_trial": 0,
-        "total_trials": 0,
-        "best_acc": 0.0,
-        "exploration_results": None,
-        "diagnosis": None,
-        "iteration": 0,
-        "max_iterations": 3,
-        "current_epoch": 0,
-        "total_epochs": 0
-    }
+    # Reset to initial idle state
+    with state_lock:
+        auto_training_state.clear()
+        auto_training_state.update({
+            "status": "idle",
+            "current_config": 0,
+            "total_configs": 0,
+            "current_trial": 0,
+            "total_trials": 0,
+            "best_acc": 0.0,
+            "exploration_results": None,
+            "diagnosis": None,
+            "iteration": 0,
+            "max_iterations": 3,
+            "current_epoch": 0,
+            "total_epochs": 0
+        })
     
     # If force_delete is True, also remove the persistence file
     if force_delete:

@@ -103,7 +103,12 @@ def validate(model, loader, criterion):
     return loss, acc
 
 def train_model(params, dataset_train, dataset_val, num_epochs=10):
-    num_classes = len(dataset_train.classes)
+    if hasattr(dataset_train, 'classes'):
+        num_classes = len(dataset_train.classes)
+    else:
+        # Handle Subset
+        num_classes = len(dataset_train.dataset.classes)
+
     model = create_model(num_classes).to(DEVICE)
     
     criterion = nn.CrossEntropyLoss()
@@ -206,7 +211,18 @@ def run_automated_training(full_epochs=300, dataset_train=None, dataset_val=None
         study.optimize(objective, n_trials=n_trials)
         return study.best_params
 
-    best_params = tune_wrapper(dataset_train, dataset_val, n_trials=3) # Reduced to 3 trials
+    # Subsampling for Tuning (Efficiency)
+    tune_dataset_train = dataset_train
+    tune_dataset_val = dataset_val
+    
+    # If dataset is large, subsample for faster tuning
+    if len(dataset_train) > 1000 and HAS_TORCH:
+        print(f"Subsampling dataset for tuning (1000 samples)...")
+        indices = torch.randperm(len(dataset_train))[:1000].tolist()
+        from torch.utils.data import Subset
+        tune_dataset_train = Subset(dataset_train, indices)
+
+    best_params = tune_wrapper(tune_dataset_train, tune_dataset_val, n_trials=3) # Reduced to 3 trials
     print(f"Best Params: {best_params}")
     
     print("Phase 2: Full Training")
@@ -604,6 +620,10 @@ def evaluate_saved_model(model_path=None):
     if model_path is None:
         model_path = os.path.join(MODELS_DIR, "best_model.pth")
     
+    # Validation: Only check file existence if we don't have an in-memory model passed (not implemented yet)
+    # But wait, the function signature is def evaluate_saved_model(model_path=None):
+    # It doesn't accept a model object yet. Let's fix that later if needed. 
+    # For now, just fix the file check logic.
     if not os.path.exists(model_path):
         return {"error": "Model not found"}
         
@@ -625,7 +645,7 @@ def evaluate_saved_model(model_path=None):
         # We assume ResNet18 as it's the standard here. 
         # Ideally we'd save architecture info, but for now this is safe.
         model = create_model(num_classes, "resnet18") 
-        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE, weights_only=True))
         model.to(DEVICE)
         model.eval()
         
@@ -664,12 +684,23 @@ def evaluate_saved_model(model_path=None):
 
 def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs=10, epoch_callback=None):
     """Modified train_model to support weight_decay AND Learning Rate Scheduler."""
-    num_classes = len(dataset_train.classes)
+    if hasattr(dataset_train, 'classes'):
+        num_classes = len(dataset_train.classes)
+        all_labels = dataset_train.labels
+    else:
+        # Handle Subset - access underlying dataset
+        num_classes = len(dataset_train.dataset.classes)
+        # For labels, Subset doesn't expose them directly list this.
+        # We need to extract labels for the subset indices to calculate weights correctly.
+        # Or just use the full dataset labels? No, class distribution might change in subset (though unlikely to be zero if random).
+        # Safe fallback: Use full dataset labels for weighting to avoid complexity, or skip weighting for tuning.
+        # But wait, weights are calculated using `dataset_train.labels`. Subset doesn't have .labels either.
+        all_labels = [dataset_train.dataset.labels[i] for i in dataset_train.indices]
+
     model_name = params.get("model", "resnet18")
     model = create_model(num_classes, model_name=model_name).to(DEVICE)
     
     # Calculate class weights for imbalanced data
-    all_labels = dataset_train.labels
     counts = np.bincount(all_labels, minlength=num_classes)
     
     # Handle classes with 0 samples to avoid excessive weights
@@ -794,7 +825,8 @@ def train_model_with_weight_decay(params, dataset_train, dataset_val, num_epochs
                 "val_loss": val_loss
             })
         
-        # Unified Best Model & Early Stopping Logic (Loss-driven for best fine-tuning)
+        # Unified Best Model & Early Stopping Logic (Loss-driven)
+        # User requested Loss preference: Better calibration and confidence for defect detection.
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_acc = val_acc

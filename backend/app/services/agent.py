@@ -26,6 +26,24 @@ def query_llama3(prompt):
             
     return "Error communicating with Ollama: All models failed."
 
+def extract_json(text):
+    """Robustly extracts JSON from LLM response."""
+    # 1. Try finding a markdown block
+    match = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if match:
+        try: 
+            return json.loads(match.group(1)) 
+        except: pass
+    
+    # 2. Try identifying the first outer bracket pair
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except: pass
+        
+    return None
+
 def analyze_situation_and_decide():
     """
     Analyzes the current state and returns a decision.
@@ -104,11 +122,10 @@ def analyze_situation_and_decide():
     analysis_text = response_text
     
     # Attempt to parse JSON
-    try:
-        match = re.search(r'\{.*\}', analysis_text, re.DOTALL)
-        if match:
-            json_str = match.group(0)
-            decision = json.loads(json_str)
+    decision = extract_json(analysis_text)
+    
+    if decision:
+        try:
             decision['raw_issues_count'] = num_issues
             decision['issues_list'] = issues
             
@@ -117,28 +134,26 @@ def analyze_situation_and_decide():
                 decision['analysis'] = decision.get('analysis', '') + strategy_info
             
             return decision
-    except Exception as e:
-        print(f"[WARNING] Failed to parse JSON from Agent: {e}")
-        # Proceed to fallback below
-        
-    # Fallback if AI response is not valid JSON but exists
-    print("[INFO] Using fallback decision logic due to parsing failure.")
-    if num_issues > 5:
-        return {
-            "analysis": f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Significant label issues detected. Cleaning recommended.",
-            "recommended_action": "data_cleaning",
-            "issues_list": issues,
-            "raw_issues_count": num_issues,
-            "is_fallback": True
-        }
-    else:
-        return {
-            "analysis": f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Dataset looks healthy. Training recommended.",
-            "recommended_action": "start_training",
-            "issues_list": issues,
-            "raw_issues_count": num_issues,
-            "is_fallback": True
-        }
+        except Exception as e:
+             print(f"[WARNING] Failed to process parsed JSON: {e}")
+
+    # Fallback (AI Failed or JSON Invalid)
+    print(f"[INFO] Using fallback decision logic. AI Response snippet: {analysis_text[:100]}...")
+    
+    fallback_analysis = f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Significant label issues detected ({num_issues}). Cleaning recommended."
+    fallback_action = "data_cleaning"
+    
+    if num_issues <= 5:
+        fallback_analysis = f"AI Analysed (Raw): {analysis_text[:200]}...\n\nSystem: Dataset looks healthy ({num_issues} issues). Training recommended."
+        fallback_action = "start_training"
+
+    return {
+        "analysis": fallback_analysis,
+        "recommended_action": fallback_action,
+        "issues_list": issues,
+        "raw_issues_count": num_issues,
+        "is_fallback": True
+    }
 
 # ============== Phase 4: Post-Training Diagnosis ==============
 
@@ -222,26 +237,18 @@ def diagnose_after_exploration(exploration_results):
     response = query_llama3(prompt)
     
     # Parse response
-    import json, re
-    try:
-        match = re.search(r'\{.*\}', response, re.DOTALL)
-        if match:
-            diagnosis = json.loads(match.group(0))
-            diagnosis["best_result"] = best
-            diagnosis["all_results_summary"] = [
-                {"config": r["config_name"], "val_acc": r["val_acc"]} 
-                for r in all_results
-            ]
-            return diagnosis
-        else:
-            return {
-                "diagnosis": "error",
-                "reasoning": "Failed to parse agent response",
-                "raw_response": response
-            }
-    except Exception as e:
+    diagnosis = extract_json(response)
+    
+    if diagnosis:
+        diagnosis["best_result"] = best
+        diagnosis["all_results_summary"] = [
+            {"config": r["config_name"], "val_acc": r["val_acc"]} 
+            for r in all_results
+        ]
+        return diagnosis
+    else:
         return {
             "diagnosis": "error",
-            "reasoning": f"Parsing error: {str(e)}",
+            "reasoning": "Failed to parse agent response",
             "raw_response": response
         }

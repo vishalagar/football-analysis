@@ -47,6 +47,16 @@ async function fetchStats(shouldRedirect = true) {
     }
 }
 
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function renderStats(stats) {
     const container = document.getElementById('stats-container');
     if (!container) return;
@@ -55,8 +65,8 @@ function renderStats(stats) {
     for (const [split, info] of Object.entries(stats)) {
         html += `
             <div class="stat-item">
-                <span style="text-transform: capitalize;">${split} Set</span>
-                <span>${info.count} samples</span>
+                <span style="text-transform: capitalize;">${escapeHtml(split)} Set</span>
+                <span>${escapeHtml(info.count)} samples</span>
             </div>
         `;
     }
@@ -70,7 +80,7 @@ function updateBatchDropdown() {
     // Save current value
     const curVal = select.value;
     select.innerHTML = '<option value="">Move to...</option>' +
-        availableClasses.map(cls => `<option value="${cls}">${cls}</option>`).join('');
+        availableClasses.map(cls => `<option value="${escapeHtml(cls)}">${escapeHtml(cls)}</option>`).join('');
     select.value = curVal;
 }
 
@@ -210,7 +220,7 @@ function displayAgentDecision(decision) {
         </div>
         <div style="padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <b style="color: var(--success-color)">RECOMMENDATION:</b> ${decision.recommended_action.replace('_', ' ')}
+                <b style="color: var(--success-color)">RECOMMENDATION:</b> ${escapeHtml(decision.recommended_action.replace('_', ' '))}
             </div>
             ${decision.recommended_action === "data_cleaning" ? `<button class="btn-success" onclick="skipToBenchmark()" style="padding: 4px 10px; height: auto; min-height: unset; font-size: 0.75rem;">Skip & Continue</button>` : ''}
         </div>
@@ -256,20 +266,20 @@ function renderIssues(issues) {
                        onchange="updateSelection(${idx}, this.checked)" 
                        ${selectedIssues.has(issue.file_path) ? 'checked' : ''}
                        style="position: absolute; top: 15px; left: 15px; z-index: 10;">
-                <img src="/dataset/${issue.split}/${issue.given_label}/${fileName(issue.file_path)}?t=${Date.now()}" 
+                <img src="/dataset/${escapeHtml(issue.split)}/${escapeHtml(issue.given_label)}/${escapeHtml(fileName(issue.file_path))}?t=${Date.now()}" 
                      class="issue-img" loading="lazy">
             </div>
             <div class="issue-details">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center;">
-                    <span class="badge ${issue.issue_type}">${issue.issue_type.replace('_', ' ').toUpperCase()}</span>
+                    <span class="badge ${escapeHtml(issue.issue_type)}">${escapeHtml(issue.issue_type.replace('_', ' ').toUpperCase())}</span>
                     <span style="font-size: 0.75rem; color: var(--accent-color)">${(issue.confidence * 100).toFixed(0)}% Conf.</span>
                 </div>
                 <div style="margin-bottom: 15px;">
-                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px;">Current: <span style="color: var(--danger-color); font-weight: 600;">${issue.given_label}</span></p>
-                    <p style="font-size: 0.8rem; color: var(--text-secondary);">Suggest: <span style="color: ${issue.suggested_label === 'delete' ? 'var(--danger-color)' : 'var(--success-color)'}; font-weight: 600;">${issue.suggested_label.toUpperCase()}</span></p>
+                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px;">Current: <span style="color: var(--danger-color); font-weight: 600;">${escapeHtml(issue.given_label)}</span></p>
+                    <p style="font-size: 0.8rem; color: var(--text-secondary);">Suggest: <span style="color: ${issue.suggested_label === 'delete' ? 'var(--danger-color)' : 'var(--success-color)'}; font-weight: 600;">${escapeHtml(issue.suggested_label.toUpperCase())}</span></p>
                 </div>
                 <select id="select-${idx}" style="margin-bottom: 12px;">
-                    ${availableClasses.map(cls => `<option value="${cls}" ${cls === issue.suggested_label ? 'selected' : ''}>${cls}</option>`).join('')}
+                    ${availableClasses.map(cls => `<option value="${escapeHtml(cls)}" ${cls === issue.suggested_label ? 'selected' : ''}>${escapeHtml(cls)}</option>`).join('')}
                 </select>
                 <div class="actions">
                     <button class="btn-success" onclick="applyFixSingle(${idx}, 'move')" style="padding: 6px;">Move</button>
@@ -518,8 +528,24 @@ function startPollingStatus() {
                 document.getElementById('analyze-btn').disabled = false;
             }
         } catch (e) {
+            console.error("Polling error:", e);
             clearInterval(interval);
             isTraining = false;
+
+            // Reset UI on error so it doesn't get stuck
+            const btn = document.getElementById('train-btn');
+            const statusBadge = document.getElementById('system-status');
+
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = "Start Multi-Model Benchmark";
+            }
+            if (statusBadge) {
+                statusBadge.innerText = "System Standby";
+                statusBadge.classList.remove('pulse');
+            }
+            const analyzeBtn = document.getElementById('analyze-btn');
+            if (analyzeBtn) analyzeBtn.disabled = false;
         }
     }, 2000);
 }
@@ -595,12 +621,12 @@ function updateAutoTrainingUI(state) {
                 logs.innerHTML += `
                     <div style="margin-top: 20px; padding: 15px; background: rgba(56, 189, 248, 0.1); border-radius: 8px; font-size: 0.9rem;">
                         <p style="color: var(--accent-color); font-weight: 600; margin-bottom: 8px;">🧠 AI Analysis:</p>
-                        ${diagnosis.conclusion ? `<p style="margin-bottom:8px"><b>Conclusion:</b> ${diagnosis.conclusion}</p>` : ''}
-                        ${diagnosis.dataset_analysis ? `<p style="margin-bottom:8px"><b>Dataset:</b> ${diagnosis.dataset_analysis}</p>` : ''}
+                        ${diagnosis.conclusion ? `<p style="margin-bottom:8px"><b>Conclusion:</b> ${escapeHtml(diagnosis.conclusion)}</p>` : ''}
+                        ${diagnosis.dataset_analysis ? `<p style="margin-bottom:8px"><b>Dataset:</b> ${escapeHtml(diagnosis.dataset_analysis)}</p>` : ''}
                          ${diagnosis.next_steps ? `
                             <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
                                 ${diagnosis.next_steps.map(step =>
-                    `<button class="btn-primary" style="font-size: 0.8rem; padding: 5px 10px;" onclick="handleNextStep('${step.action}')">${step.label}</button>`
+                    `<button class="btn-primary" style="font-size: 0.8rem; padding: 5px 10px;" onclick="handleNextStep('${escapeHtml(step.action)}')">${escapeHtml(step.label)}</button>`
                 ).join('')}
                             </div>
                         ` : ''}
