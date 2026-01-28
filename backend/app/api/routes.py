@@ -569,16 +569,16 @@ def handle_user_feedback(action: str):
         return {"status": "unknown_action"}
 
 @router.post("/reset_training_state")
-def reset_training_state(force_delete: bool = False):
+def reset_training_state(force_delete: bool = False, hard_reset: bool = False):
     """
-    Resets the auto-training state to idle. 
-    Useful when the state gets stuck in 'exploring' or 'diagnosing' with no actual training running.
+    Resets the auto-training state.
+    - Soft Reset (default): Resets state to idle.
+    - Hard Reset (hard_reset=True): Resets state AND deletes all Datasets, Models, and Logs.
     """
     global auto_training_state
     
     current_status = auto_training_state["status"]
     
-    # Reset to initial idle state
     # Reset to initial idle state
     with state_lock:
         auto_training_state.clear()
@@ -597,17 +597,48 @@ def reset_training_state(force_delete: bool = False):
             "total_epochs": 0
         })
     
-    # If force_delete is True, also remove the persistence file
-    if force_delete:
+    deleted_items = []
+
+    # Hard Reset: Delete Everything
+    if hard_reset:
+        try:
+            # 1. Delete Datasets
+            if os.path.exists(DATASET_DIR):
+                shutil.rmtree(DATASET_DIR)
+                os.makedirs(DATASET_DIR)
+                deleted_items.append("Datasets")
+            
+            # 2. Delete Models (Preserve cleanlab cache if strictly needed, but hard means hard)
+            if os.path.exists(MODELS_DIR):
+                shutil.rmtree(MODELS_DIR)
+                os.makedirs(MODELS_DIR)
+                deleted_items.append("Models")
+
+            # 3. Delete Logs
+            if os.path.exists(LOGS_DIR):
+                shutil.rmtree(LOGS_DIR)
+                os.makedirs(LOGS_DIR)
+                deleted_items.append("Logs")
+                
+        except Exception as e:
+            print(f"Error during hard reset: {e}")
+            return {
+                 "status": "error",
+                 "message": f"Partial reset. Failed to delete some files: {str(e)}"
+            }
+
+    # Soft Reset / Legacy force_delete: Just metrics.json
+    elif force_delete:
         metrics_path = os.path.join(MODELS_DIR, "metrics.json")
         if os.path.exists(metrics_path):
             try:
                 os.remove(metrics_path)
+                deleted_items.append("Metrics")
             except Exception as e:
                 print(f"Failed to delete metrics.json: {e}")
     
     return {
         "status": "reset", 
-        "message": f"Training state reset from '{current_status}' to 'idle'",
+        "message": f"System Reset ({'Hard' if hard_reset else 'Soft'}). Deleted: {', '.join(deleted_items) if deleted_items else 'State Only'}",
         "previous_status": current_status
     }

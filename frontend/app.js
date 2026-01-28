@@ -478,23 +478,50 @@ async function resetTrainingState() {
     }
 }
 
-async function fullSystemReset() {
-    if (!confirm("Are you sure? This will STOP any running training, RESET all progress, and allow you to start fresh. (Models and Datasets are preserved)")) return;
+async function performSoftReset() {
+    if (!confirm("Soft Reset: This will clear current training state and logs from the dashboard. Your Data and Models will be preserved.\n\nProceed?")) return;
 
     try {
-        const res = await fetch(`${API_BASE}/reset_training_state?force_delete=true`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/reset_training_state?force_delete=true`, { method: 'POST' }); // force_delete here clears metrics.json
         const data = await res.json();
 
         if (res.ok) {
-            alert("System Reset Successfully! You can now start fresh.");
-            // Force reload to clear any local state/visuals
+            alert("Soft Reset Complete! Dashboard will reload.");
             window.location.reload();
         } else {
-            alert('Failed to reset system: ' + data.detail);
+            alert('Failed to reset: ' + data.detail);
         }
     } catch (e) {
-        alert(`Error resetting system: ${e.message}`);
+        alert(`Error: ${e.message}`);
     }
+}
+
+async function performHardReset() {
+    const confirmation = prompt("⚠️ HARD RESET WARNING ⚠️\n\nThis will DELETE ALL:\n- Uploaded Datasets\n- Trained Models\n- Logs\n\nThis action cannot be undone.\n\nType 'DELETE' to confirm:");
+
+    if (confirmation !== 'DELETE') {
+        if (confirmation !== null) alert("Reset cancelled. You must type 'DELETE' exactly.");
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/reset_training_state?hard_reset=true`, { method: 'POST' });
+        const data = await res.json();
+
+        if (res.ok) {
+            alert("Hard Reset Successful. System is essentially brand new.");
+            window.location.reload();
+        } else {
+            alert('Failed to hard reset: ' + data.detail);
+        }
+    } catch (e) {
+        alert(`Error: ${e.message}`);
+    }
+}
+
+// Deprecated but kept to avoid breakages if called elsewhere
+function fullSystemReset() {
+    performSoftReset();
 }
 
 
@@ -776,12 +803,54 @@ window.evaluateCurrentModel = evaluateCurrentModel;
 window.startTraining = startTraining;
 window.autoFixAll = autoFixAll;
 window.applyBatchFix = applyBatchFix;
+window.updateSelection = updateSelection;
 window.toggleSelectAll = toggleSelectAll;
 window.applyFixSingle = applyFixSingle;
 window.skipToBenchmark = skipToBenchmark;
 window.forceShowTraining = forceShowTraining;
 window.handleNextStep = handleNextStep;
-window.fullSystemReset = fullSystemReset;
+window.performSoftReset = performSoftReset;
+window.performHardReset = performHardReset;
+
+async function performSoftReset() {
+    if (confirm("Are you sure you want to perform a soft reset? This will clear current progress but keep uploaded data.")) {
+        try {
+            const res = await fetch(`${API_BASE}/reset_system`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hard_reset: false })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "Soft reset failed");
+            }
+            alert("Soft reset successful! Reloading page...");
+            location.reload();
+        } catch (e) {
+            alert(`Soft Reset Failed: ${e.message}`);
+        }
+    }
+}
+
+async function performHardReset() {
+    if (confirm("WARNING: Are you absolutely sure you want to perform a HARD reset? This will clear ALL progress, uploaded data, and cached models. This action cannot be undone.")) {
+        try {
+            const res = await fetch(`${API_BASE}/reset_system`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hard_reset: true })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "Hard reset failed");
+            }
+            alert("Hard reset successful! Reloading page...");
+            location.reload();
+        } catch (e) {
+            alert(`Hard Reset Failed: ${e.message}`);
+        }
+    }
+}
 
 async function handleNextStep(action) {
     if (action === 'filter_dataset') {
