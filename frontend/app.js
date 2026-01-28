@@ -796,6 +796,43 @@ async function uploadAndRun() {
     }
 }
 
+async function handleNextStep(action) {
+    if (action === 'filter_dataset') {
+        const cleaningSec = document.getElementById('cleaning-section');
+        const trainingSec = document.getElementById('training-section');
+        const logs = document.getElementById('training-logs');
+
+        // Show loading state in logs
+        logs.innerHTML += `<div style="margin-top:20px; color: var(--accent-color); font-style: italic;">🔄 Running Hybrid Analysis using best model...</div>`;
+
+        try {
+            const res = await fetch(`${API_BASE}/analyze_with_model`);
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || "Analysis failed");
+            }
+            const decision = await res.json();
+
+            // Switch views
+            trainingSec.style.display = 'none';
+            cleaningSec.style.display = 'block';
+            cleaningSec.scrollIntoView({ behavior: 'smooth' });
+
+            // Render new issues
+            displayAgentDecision(decision);
+
+        } catch (e) {
+            alert(`Hybrid Analysis Failed: ${e.message}`);
+        }
+    } else if (action === 'more_tuning') {
+        // Reset state and restart training
+        if (confirm("This will reset the current results and start a new hyperparameter tuning session. Continue?")) {
+            await resetTrainingState();
+            await startTraining();
+        }
+    }
+}
+
 // Global scope expose
 window.uploadAndRun = uploadAndRun;
 window.triggerAnalysis = triggerAnalysis;
