@@ -10,14 +10,30 @@ export function loadFile(video: HTMLVideoElement, file: File): void {
   video.load();
 }
 
+/** Phones and tablets have no getDisplayMedia, so tab sharing is desktop only. */
+export const canShareTab = () => !!navigator.mediaDevices?.getDisplayMedia;
+
+/** Chrome's CaptureController; not in every DOM typing yet. */
+type FocusController = { setFocusBehavior?(b: 'focus-capturing-application' | 'no-focus-change'): void };
+
 export async function loadTab(video: HTMLVideoElement): Promise<void> {
-  if (!navigator.mediaDevices?.getDisplayMedia) {
-    throw new Error('This browser cannot share a tab. Try Chrome or Edge on a laptop.');
-  }
+  if (!canShareTab()) throw new Error('unsupported');
+  const Ctl = (window as unknown as { CaptureController?: new () => FocusController }).CaptureController;
+  const controller = Ctl ? new Ctl() : undefined;
   const stream = await navigator.mediaDevices.getDisplayMedia({
     video: { frameRate: 30 },
     audio: false,
-  });
+    controller,
+    // Sharing this tab would analyse our own overlay.
+    selfBrowserSurface: 'exclude',
+  } as DisplayMediaStreamOptions);
+  // Chrome jumps to the shared tab by default, hiding the analysis. Stay here;
+  // the shared tab keeps playing in the background.
+  try {
+    controller?.setFocusBehavior?.('focus-capturing-application');
+  } catch {
+    // Too late or not a tab: the user switches back by hand.
+  }
   stopStream(video);
   video.removeAttribute('src');
   video.srcObject = stream;

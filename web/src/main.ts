@@ -90,6 +90,9 @@ async function analyse(t: number): Promise<void> {
     dets.push(...(await detector.detect(video, vw, vh, roi)).filter((d) => d.kind === 'ball'));
   }
   const tracks = tracker.update(dets, t);
+  // A shared tab streams even while its video is paused; the hint stays up
+  // until there is someone on screen to analyse.
+  if (source === 'tab' && tracks.length && $('notice').textContent === NOTICES.waiting) showNotice(null);
   for (const tr of tracks) {
     sampleKit(tr);
     tr.team = tr.kind === 'referee' ? 2 : teams.classify(tr.colour);
@@ -204,7 +207,9 @@ function renderTimeline(): void {
 
 const NOTICES: Record<string, string> = {
   drm: 'This stream is copy-protected, so the browser only hands us a black picture. Paid apps like Hotstar, SonyLIV and Netflix do this. Use highlight clips (YouTube, FanCode) or a video file instead.',
-  tab: 'Tab sharing was cancelled or is not available in this browser.',
+  tab: 'Tab sharing was cancelled. Press "Analyse a browser tab" again and pick the tab with the match.',
+  notab: 'This browser cannot share a tab. Phones and tablets do not allow it. Use Chrome or Edge on a laptop, or choose a video file instead.',
+  waiting: 'Sharing the tab. Press play on the video in that tab. It keeps playing while you watch the analysis here.',
   model: 'The model did not load. Check that web/public/models/ holds model.onnx and meta.json (see docs/model.md).',
   degenerate: 'Those four points are in a line, so the pitch cannot be mapped. Try again with points that form a box.',
 };
@@ -255,10 +260,11 @@ $('btn-tab').addEventListener('click', async () => {
     await loadTab(video);
     tabStart = performance.now() / 1000;
     started('tab', 'Shared tab');
+    showNotice('waiting');
     video.srcObject && (video.srcObject as MediaStream).getVideoTracks()[0]
       .addEventListener('ended', () => { stopStream(video); document.body.dataset.state = 'empty'; });
-  } catch {
-    showNotice('tab');
+  } catch (err) {
+    showNotice(err instanceof Error && err.message === 'unsupported' ? 'notab' : 'tab');
   }
 });
 

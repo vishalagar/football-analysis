@@ -30,12 +30,22 @@ export class Detector {
       try {
         this.session = await ort.InferenceSession.create(bytes, { executionProviders: [ep] });
         this.backend = ep;
+        // The first run compiles GPU shaders and can take seconds; do it
+        // behind the loading bar, not on the first frame of play.
+        await this.warmUp();
         break;
       } catch (err) {
         if (ep === 'wasm') throw err;
       }
     }
     return this.meta;
+  }
+
+  private async warmUp(): Promise<void> {
+    const size = this.meta.input;
+    const feeds = { [this.session.inputNames[0]]: new this.ort.Tensor('float32', this.input, [1, 3, size, size]) };
+    const out = await this.session.run(feeds);
+    for (const t of Object.values(out)) t.dispose();
   }
 
   /** Detects on the whole frame, or only inside `roi` (zoomed to fill the input). */
