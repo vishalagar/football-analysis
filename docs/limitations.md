@@ -20,8 +20,10 @@ with a football-specific model (see [model.md](model.md)).
 - **Crowded boxes merge.** At a corner, overlapping players can become one
   box, and ids may swap when they separate. This affects the pass network
   more than the totals.
-- **Ids are not squad numbers.** A player who leaves the frame and comes
-  back gets a new id. Shirt numbers aren't read.
+- **Ids are not squad numbers.** A player hidden behind others or briefly out
+  of shot gets their old id back if they reappear near where they were
+  heading, in the same kit, within 4 seconds. After longer gaps, or a camera
+  cut, they get a new id. Shirt numbers aren't read.
 - **Similar kits confuse the clustering.** Two dark kits, or white against
   light grey, can merge. Goalkeepers usually get flagged as outliers because
   their kit differs, so they drop out of team stats. Referees in a colour
@@ -37,7 +39,9 @@ with a football-specific model (see [model.md](model.md)).
   close.
 - **A pass is inferred, not seen.** Possession moving between team-mates
   within 6 s counts as a pass, so a deflection that lands with a team-mate
-  also counts. Passes the tracker never sees start (because the ball wasn't
+  also counts. Two filters cut false passes: the ball must travel at least
+  1.5 player heights, and a new id appearing where the vanished holder stood
+  is treated as the same player re-tracked. Passes the tracker never sees start (because the ball wasn't
   detected) are missed.
 - **Turnovers include everything.** Tackles, interceptions and loose balls
   all count as "ball won back".

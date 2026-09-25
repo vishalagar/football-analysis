@@ -35,4 +35,13 @@ describe('MatchStats', () => {
     expect(s.turnoversWon).toEqual([0, 1]);
     expect(s.edges.get('1>2')).toBe(2);
   });
+
+  it('counts players on screen now, not every id ever seen', () => {
+    const s = new MatchStats();
+    const smp = (id: number, team: 0 | 1) => ({ id, team, pos: { x: 0, y: 0 }, px: { x: 0, y: 0 }, mpp: 1 });
+    s.step(0, 0, [smp(1, 0), smp(2, 0), smp(3, 1)], null, null, true);
+    s.step(0.1, 0.1, [smp(4, 0), smp(5, 1)], null, null, true);
+    expect(s.players.size).toBe(5);
+    expect(s.onScreen).toEqual([1, 1]);
+  });
 });

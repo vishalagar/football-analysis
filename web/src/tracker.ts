@@ -23,16 +23,45 @@ export interface TrackerOptions {
   maxMissed: number;
   /** Hits needed before a track is shown and counted. */
   minHits: number;
+  /** Seconds a dropped player's id is kept for them to come back. */
+  reviveSec: number;
+  /** Largest kit colour distance (RGB) still treated as the same player. */
+  reviveColour: number;
 }
 
-const DEFAULTS: TrackerOptions = { iouMin: 0.2, centreGate: 0.8, maxMissed: 12, minHits: 3 };
+const DEFAULTS: TrackerOptions = {
+  iouMin: 0.2, centreGate: 0.8, maxMissed: 12, minHits: 3, reviveSec: 4, reviveColour: 60,
+};
+
+/** Samples the kit colour inside a box, if the caller can see the frame. */
+export type ColourOf = (b: Box) => Rgb | null;
+
+/** A confirmed player who dropped out of view, kept briefly for re-identification. */
+interface Lost extends Box {
+  id: number;
+  kind: Kind;
+  colour: Rgb | null;
+  vx: number;
+  vy: number;
+  lastT: number;
+}
+
+/** How far (in body heights) a lost player may have moved after dt seconds. */
+const reachAfter = (dt: number) => Math.min(6, 1 + 3 * dt);
+const rgbDist = (a: Rgb, b: Rgb) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 
 /**
  * SORT-style tracker without a Kalman filter: constant-velocity prediction,
  * greedy IoU matching, then a centre-distance pass for fast movers.
+ *
+ * Ids are handed out only when a track is confirmed, so flickering false
+ * detections don't burn through numbers. A confirmed player who disappears
+ * (occlusion, leaving the frame briefly) gets their old id back if they
+ * reappear near where they were heading, in the same kit, within reviveSec.
  */
 export class Tracker {
   tracks: Track[] = [];
+  private lost: Lost[] = [];
   private nextId = 1;
   private readonly opt: TrackerOptions;
 
@@ -42,6 +71,7 @@ export class Tracker {
 
   reset(): void {
     this.tracks = [];
+    this.lost = [];
   }
 
   get confirmed(): Track[] {
@@ -58,7 +88,7 @@ export class Tracker {
       });
   }
 
-  update(dets: Detection[], t: number): Track[] {
+  update(dets: Detection[], t: number, colourOf?: ColourOf): Track[] {
     const people = dets.filter((d) => d.kind !== 'ball');
     const unmatchedT = new Set(this.tracks.map((_, i) => i));
     const unmatchedD = new Set(people.map((_, i) => i));
@@ -89,12 +119,51 @@ export class Tracker {
     for (const di of unmatchedD) {
       const d = people[di];
       this.tracks.push({
-        ...box(d), id: this.nextId++, kind: d.kind, team: -1, colour: null,
+        ...box(d), id: 0, kind: d.kind, team: -1, colour: null,
         hits: 1, missed: 0, vx: 0, vy: 0, lastT: t,
       });
     }
-    this.tracks = this.tracks.filter((tr) => tr.missed <= this.opt.maxMissed);
+    this.retire(t);
+    for (const tr of this.tracks) if (!tr.id && tr.hits >= this.opt.minHits) this.confirm(tr, t, colourOf);
     return this.confirmed;
+  }
+
+  /** Moves dropped tracks to the lost list and forgets players gone too long. */
+  private retire(t: number): void {
+    const keep: Track[] = [];
+    for (const tr of this.tracks) {
+      if (tr.missed <= this.opt.maxMissed) keep.push(tr);
+      else if (tr.id) this.lost.push({ ...box(tr), id: tr.id, kind: tr.kind, colour: tr.colour, vx: tr.vx, vy: tr.vy, lastT: tr.lastT });
+    }
+    this.tracks = keep;
+    this.lost = this.lost.filter((l) => t - l.lastT <= this.opt.reviveSec);
+  }
+
+  /** Gives a newly confirmed track a lost player's id when it fits, else a fresh one. */
+  private confirm(tr: Track, t: number, colourOf?: ColourOf): void {
+    const colour = colourOf?.(tr) ?? null;
+    let best = -1;
+    let bestCost = Infinity;
+    this.lost.forEach((l, i) => {
+      if ((l.kind === 'referee') !== (tr.kind === 'referee')) return;
+      const dt = t - l.lastT;
+      const k = Math.min(0.5, dt);
+      const h = Math.max(l.h, tr.h);
+      const d = dist(centre({ ...l, x: l.x + l.vx * k, y: l.y + l.vy * k }), centre(tr)) / h;
+      if (d > reachAfter(dt)) return;
+      const c = colour && l.colour ? rgbDist(colour, l.colour) : null;
+      if (c !== null && c > this.opt.reviveColour) return;
+      const cost = d + (c ?? this.opt.reviveColour / 2) / this.opt.reviveColour;
+      if (cost < bestCost) { bestCost = cost; best = i; }
+    });
+    if (best < 0) {
+      tr.id = this.nextId++;
+      tr.colour = colour;
+      return;
+    }
+    const [l] = this.lost.splice(best, 1);
+    tr.id = l.id;
+    tr.colour = l.colour ?? colour;
   }
 
   private assign(

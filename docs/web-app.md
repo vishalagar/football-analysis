@@ -35,7 +35,7 @@ into `public/ort/`. If the model fails to load, check that folder exists.
 
 - Possession split, with each side's colour taken from the detected kits.
   Click *Home* or *Away* to rename a team.
-- Passes, balls won back, distance covered, and players tracked, per side.
+- Passes, balls won back, distance covered, and players on screen right now, per side.
 - *Ball found in N% of analysed frames* tells you how much to trust the
   possession numbers. Below about 30%, treat them as rough.
 

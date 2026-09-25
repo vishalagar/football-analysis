@@ -32,6 +32,8 @@ export class MatchStats {
   passes: [number, number] = [0, 0];
   turnoversWon: [number, number] = [0, 0];
   players = new Map<number, PlayerStats>();
+  /** Players of each side in the latest analysed frame. */
+  onScreen: [number, number] = [0, 0];
   heat: [Float32Array, Float32Array] = [newGrid(), newGrid()];
   ballHeat = newGrid();
   edges = new Map<string, number>();
@@ -49,6 +51,8 @@ export class MatchStats {
       bump(this.ballHeat, ball);
     }
     if (team !== null && dt < 1) this.possession[team] += dt;
+    this.onScreen = [0, 0];
+    for (const s of samples) if (s.team === 0 || s.team === 1) this.onScreen[s.team]++;
     for (const s of samples) {
       let p = this.players.get(s.id);
       if (!p) {

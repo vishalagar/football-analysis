@@ -43,4 +43,22 @@ describe('Possession', () => {
     expect(p.team(1)).toBe(0);
     expect(p.team(100)).toBe(null);
   });
+
+  it('does not count a pass when the ball carrier just changes id', () => {
+    const p = new Possession();
+    const before = pl(1, 0, 0), after = pl(9, 0, 4); // same player, new tracker id
+    const evs = [];
+    for (let i = 0; i < 5; i++) p.update(i * 0.1, feet(before), [before]);
+    for (let i = 5; i < 10; i++) { const ev = p.update(i * 0.1, feet(after), [after]); if (ev) evs.push(ev); }
+    expect(evs).toHaveLength(0);
+  });
+
+  it('does not count a pass when the ball never travels', () => {
+    const p = new Possession();
+    const x1 = pl(1, 0, 0), x2 = pl(2, 0, 25); // two team-mates in a huddle
+    const evs = [];
+    for (let i = 0; i < 5; i++) p.update(i * 0.1, feet(x1), [x1, x2]);
+    for (let i = 5; i < 10; i++) { const ev = p.update(i * 0.1, { x: 30, y: 60 }, [{ ...x1, x: -40 }, x2]); if (ev) evs.push(ev); }
+    expect(evs).toHaveLength(0);
+  });
 });

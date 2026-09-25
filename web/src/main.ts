@@ -12,7 +12,7 @@ import { MatchStats, type Sample } from './stats';
 import { retry } from './retry';
 import { jerseyColour, TeamModel } from './teams';
 import { Tracker, type Track } from './tracker';
-import type { MatchEvent, Point, Rgb } from './types';
+import type { Box, MatchEvent, Point, Rgb } from './types';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const video = $<HTMLVideoElement>('video');
@@ -60,11 +60,15 @@ function toPitch(p: Point): Point {
   return { x: (p.x / video.videoWidth) * PITCH.length, y: (p.y / video.videoHeight) * PITCH.width };
 }
 
-function sampleKit(tr: Track): void {
-  if (tr.h < 24) return;
+function kitAt(b: Box): Rgb | null {
+  if (b.h < 24) return null;
   // Torso only: head, arms and shorts dilute the kit colour.
-  sampler.drawImage(video, tr.x + tr.w * 0.3, tr.y + tr.h * 0.2, tr.w * 0.4, tr.h * 0.28, 0, 0, 10, 10);
-  const c = jerseyColour(sampler.getImageData(0, 0, 10, 10).data);
+  sampler.drawImage(video, b.x + b.w * 0.3, b.y + b.h * 0.2, b.w * 0.4, b.h * 0.28, 0, 0, 10, 10);
+  return jerseyColour(sampler.getImageData(0, 0, 10, 10).data);
+}
+
+function sampleKit(tr: Track): void {
+  const c = kitAt(tr);
   if (!c) return;
   tr.colour = tr.colour ? (tr.colour.map((v, i) => v * 0.8 + c[i] * 0.2) as Rgb) : c;
   if (tr.hits % 2 === 0) teams.add(tr.colour);
@@ -92,7 +96,7 @@ async function analyse(t: number): Promise<void> {
     const roi = { x: clamp(lastBall.x - w / 2, 0, vw - w), y: clamp(lastBall.y - h / 2, 0, vh - h), w, h };
     dets.push(...(await detector.detect(video, vw, vh, roi)).filter((d) => d.kind === 'ball'));
   }
-  const tracks = tracker.update(dets, t);
+  const tracks = tracker.update(dets, t, kitAt);
   for (const tr of tracks) {
     sampleKit(tr);
     tr.team = tr.kind === 'referee' ? 2 : teams.classify(tr.colour);
@@ -158,13 +162,11 @@ function panel(): void {
     document.documentElement.style.setProperty(`--kit-${i ? 'b' : 'a'}`, c);
     document.documentElement.style.setProperty(`--kit-${i ? 'b' : 'a'}-ink`, readableOn(c));
   }
-  const seen = [0, 0];
-  for (const p of stats.players.values()) if (p.team === 0 || p.team === 1) seen[p.team]++;
   const rows: Record<string, [string, string]> = {
     passes: [String(stats.passes[0]), String(stats.passes[1])],
     won: [String(stats.turnoversWon[0]), String(stats.turnoversWon[1])],
     dist: [(stats.teamMetres(0) / 1000).toFixed(2), (stats.teamMetres(1) / 1000).toFixed(2)],
-    seen: [String(seen[0]), String(seen[1])],
+    seen: [String(stats.onScreen[0]), String(stats.onScreen[1])],
   };
   for (const [k, [a, b]] of Object.entries(rows)) {
     setNum(`s-${k}-a`, a);
