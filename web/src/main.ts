@@ -9,6 +9,7 @@ import { drawOverlay, fitView, readableOn } from './render/overlay';
 import { pitchSvg } from './render/pitchSvg';
 import { CutDetector, DrmWatch, loadFile, loadTab, stopStream, type SourceKind } from './source';
 import { MatchStats, type Sample } from './stats';
+import { retry } from './retry';
 import { jerseyColour, TeamModel } from './teams';
 import { Tracker, type Track } from './tracker';
 import type { MatchEvent, Point, Rgb } from './types';
@@ -28,7 +29,9 @@ const drm = new DrmWatch();
 let stats = new MatchStats();
 let timeline: MatchEvent[] = [];
 
+const MODEL_ATTEMPTS = 3;
 let ready = false;
+let modelFailed = false;
 let source: SourceKind | null = null;
 let busy = false;
 let lastDetT = -1;
@@ -205,7 +208,7 @@ function renderTimeline(): void {
 const NOTICES: Record<string, string> = {
   drm: 'This stream is copy-protected, so the browser only hands us a black picture. Paid apps like Hotstar, SonyLIV and Netflix do this. Use highlight clips (YouTube, FanCode) or a video file instead.',
   tab: 'Tab sharing was cancelled or is not available in this browser.',
-  model: 'The model did not load. Check that web/public/models/ holds model.onnx and meta.json (see docs/model.md).',
+  model: 'The detection model did not load, most likely a dropped connection. Reload the page to try again.',
   degenerate: 'Those four points are in a line, so the pitch cannot be mapped. Try again with points that form a box.',
 };
 
@@ -225,7 +228,8 @@ function started(kind: SourceKind, label: string): void {
   drm.reset();
   H = null;
   resetMotion();
-  showNotice(null);
+  // A failed model load must stay visible, or the app just sits on "Loading…".
+  showNotice(modelFailed ? 'model' : null);
   document.body.dataset.state = 'loaded';
   document.body.dataset.source = kind;
   $('m-clip').textContent = label;
@@ -382,7 +386,8 @@ $('pitch-heat').innerHTML = pitchSvg();
 $('net').innerHTML = pitchSvg();
 document.body.dataset.state = 'empty';
 
-detector.load(import.meta.env.BASE_URL, (f) => ($('loadbar').style.transform = `scaleX(${f})`))
+const loadModel = () => detector.load(import.meta.env.BASE_URL, (f) => ($('loadbar').style.transform = `scaleX(${f})`));
+retry(loadModel, MODEL_ATTEMPTS, 1500, (n, err) => console.warn(`Model load attempt ${n} failed`, err))
   .then((meta) => {
     ready = true;
     document.body.dataset.model = 'ready';
@@ -391,6 +396,8 @@ detector.load(import.meta.env.BASE_URL, (f) => ($('loadbar').style.transform = `
   })
   .catch((err) => {
     console.error(err);
+    modelFailed = true;
+    $('m-model').textContent = 'Failed';
     showNotice('model');
   });
 
