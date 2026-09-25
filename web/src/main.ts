@@ -210,7 +210,7 @@ const NOTICES: Record<string, string> = {
   tab: 'Tab sharing was cancelled. Press "Analyse a browser tab" again and pick the tab with the match.',
   notab: 'This browser cannot share a tab. Phones and tablets do not allow it. Use Chrome or Edge on a laptop, or choose a video file instead.',
   waiting: 'Sharing the tab. Press play on the video in that tab. It keeps playing while you watch the analysis here.',
-  model: 'The model did not load. Check that web/public/models/ holds model.onnx and meta.json (see docs/model.md).',
+  model: 'The model did not load. Check your connection and reload the page. If it keeps failing, try Chrome or Edge on a laptop.',
   degenerate: 'Those four points are in a line, so the pitch cannot be mapped. Try again with points that form a box.',
 };
 
@@ -388,7 +388,11 @@ $('pitch-heat').innerHTML = pitchSvg();
 $('net').innerHTML = pitchSvg();
 document.body.dataset.state = 'empty';
 
-detector.load(import.meta.env.BASE_URL, (f) => ($('loadbar').style.transform = `scaleX(${f})`))
+detector.load(
+  import.meta.env.BASE_URL,
+  (f) => ($('loadbar').style.transform = `scaleX(${f})`),
+  (stage) => ($('m-model').textContent = stage),
+)
   .then((meta) => {
     ready = true;
     document.body.dataset.model = 'ready';
@@ -397,6 +401,7 @@ detector.load(import.meta.env.BASE_URL, (f) => ($('loadbar').style.transform = `
   })
   .catch((err) => {
     console.error(err);
+    $('m-model').textContent = 'Failed';
     showNotice('model');
   });
 

@@ -15,24 +15,35 @@ export class Detector {
   private ctx = this.canvas.getContext('2d', { willReadFrequently: true })!;
   private input!: Float32Array;
 
-  async load(base: string, onProgress: (f: number) => void): Promise<ModelMeta> {
+  async load(base: string, onProgress: (f: number) => void, onStage: (s: string) => void = () => {}): Promise<ModelMeta> {
+    onStage('Loading engine…');
     const ort = (this.ort = await import('onnxruntime-web/webgpu'));
     ort.env.wasm.wasmPaths = new URL(`${base}ort/`, location.href).href;
-    ort.env.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency || 2);
+    // Threads need SharedArrayBuffer, which only a cross-origin-isolated page gets.
+    ort.env.wasm.numThreads = crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 2) : 1;
     this.meta = await (await fetch(`${base}models/meta.json`)).json();
-    const bytes = await fetchWithProgress(`${base}models/${this.meta.file}`, onProgress);
+    const bytes = await fetchWithProgress(`${base}models/${this.meta.file}`, (f, mb) => {
+      onProgress(f);
+      onStage(f ? `Downloading ${Math.round(f * 100)}%` : `Downloading ${mb.toFixed(1)} MB`);
+    });
     const size = this.meta.input;
     this.canvas.width = this.canvas.height = size;
     this.input = new Float32Array(3 * size * size);
 
     for (const ep of ['webgpu', 'wasm'] as Backend[]) {
-      if (ep === 'webgpu' && !('gpu' in navigator)) continue;
+      if (ep === 'webgpu' && !(await hasGpu())) continue;
+      onStage(ep === 'webgpu' ? 'Starting GPU…' : 'Starting CPU engine…');
       try {
-        this.session = await ort.InferenceSession.create(bytes, { executionProviders: [ep] });
+        const start = async () => {
+          const session = await ort.InferenceSession.create(bytes, { executionProviders: [ep] });
+          // The first run compiles GPU shaders and can take seconds; do it
+          // behind the loading bar, not on the first frame of play.
+          await this.warmUp(session);
+          return session;
+        };
+        // Some GPU drivers never settle; fall back to WASM rather than hang.
+        this.session = await (ep === 'webgpu' ? withTimeout(start(), 30_000) : start());
         this.backend = ep;
-        // The first run compiles GPU shaders and can take seconds; do it
-        // behind the loading bar, not on the first frame of play.
-        await this.warmUp();
         break;
       } catch (err) {
         if (ep === 'wasm') throw err;
@@ -41,10 +52,10 @@ export class Detector {
     return this.meta;
   }
 
-  private async warmUp(): Promise<void> {
+  private async warmUp(session: Ort.InferenceSession): Promise<void> {
     const size = this.meta.input;
-    const feeds = { [this.session.inputNames[0]]: new this.ort.Tensor('float32', this.input, [1, 3, size, size]) };
-    const out = await this.session.run(feeds);
+    const feeds = { [session.inputNames[0]]: new this.ort.Tensor('float32', this.input, [1, 3, size, size]) };
+    const out = await session.run(feeds);
     for (const t of Object.values(out)) t.dispose();
   }
 
@@ -77,7 +88,26 @@ export class Detector {
   }
 }
 
-async function fetchWithProgress(url: string, onProgress: (f: number) => void): Promise<Uint8Array> {
+/** navigator.gpu can exist with no usable adapter; ORT then takes seconds to fail. */
+async function hasGpu(): Promise<boolean> {
+  const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+  if (!gpu) return false;
+  try {
+    return !!(await withTimeout(gpu.requestAdapter(), 5_000));
+  } catch {
+    return false;
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(`Timed out after ${ms} ms`)), ms);
+    p.then(resolve, reject).finally(() => clearTimeout(id));
+  });
+}
+
+/** Reports the fraction done, or 0 plus megabytes so far when the size is unknown. */
+async function fetchWithProgress(url: string, onProgress: (f: number, mb: number) => void): Promise<Uint8Array> {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`Could not load model (${res.status})`);
   const total = Number(res.headers.get('content-length')) || 0;
@@ -89,11 +119,11 @@ async function fetchWithProgress(url: string, onProgress: (f: number) => void): 
     if (done) break;
     parts.push(value);
     got += value.length;
-    if (total) onProgress(got / total);
+    onProgress(total ? got / total : 0, got / 1e6);
   }
   const buf = new Uint8Array(got);
   let o = 0;
   for (const p of parts) { buf.set(p, o); o += p.length; }
-  onProgress(1);
+  onProgress(1, got / 1e6);
   return buf;
 }
