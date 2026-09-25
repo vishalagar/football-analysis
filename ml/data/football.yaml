@@ -1,0 +1,13 @@
+# Dataset config for fine-tuning. Point `path` at a YOLO-format export, e.g. the
+# Roboflow "football-players-detection" dataset (download as "YOLOv8").
+# Class names must map onto the app's roles (see common.py NAME_ROLES).
+path: ../datasets/football-players-detection
+train: train/images
+val: valid/images
+test: test/images
+
+names:
+  0: ball
+  1: goalkeeper
+  2: player
+  3: referee

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Football Vision</title>
+  <meta name="description" content="Upload a match clip and see players, the ball, possession and passes worked out in your browser." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230F1411'/%3E%3Crect x='4' y='8' width='24' height='16' fill='none' stroke='%23ECEAE0' stroke-width='1.5'/%3E%3Cline x1='16' y1='8' x2='16' y2='24' stroke='%23ECEAE0' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23F2C230'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="mast reveal">
+    <div class="mast__brand">
+      <p class="kicker">Match analysis desk <span class="kicker__rule"></span> <span class="kicker__more">Runs in your browser</span></p>
+      <h1 class="wordmark">Football<span class="wordmark__stop">.</span><wbr />Vision</h1>
+    </div>
+    <dl class="mast__meta">
+      <div><dt>Model</dt><dd id="m-model">Loading…</dd></div>
+      <div><dt>Engine</dt><dd id="m-engine">—</dd></div>
+      <div><dt>Analysing</dt><dd id="m-rate">—</dd></div>
+      <div><dt>Footage</dt><dd><span id="m-clip">Nothing loaded</span> <span id="m-res" class="dim"></span></dd></div>
+    </dl>
+  </header>
+
+  <main class="desk">
+    <section class="stage reveal" aria-labelledby="h-footage">
+      <h2 class="label" id="h-footage"><span>01</span> Footage</h2>
+      <div class="loadbar" aria-hidden="true"><i id="loadbar"></i></div>
+      <div class="screen" id="screen">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay" aria-label="Detections drawn over the footage"></canvas>
+
+        <div class="empty" id="empty">
+          <svg class="empty__pitch" viewBox="-2 -2 109 72" aria-hidden="true">
+            <g><rect x="0" y="0" width="105" height="68"/><line x1="52.5" y1="0" x2="52.5" y2="68"/><circle cx="52.5" cy="34" r="9.15"/><rect x="0" y="13.84" width="16.5" height="40.32"/><rect x="88.5" y="13.84" width="16.5" height="40.32"/></g>
+          </svg>
+          <div class="empty__body">
+            <p class="empty__title">Drop a match clip on the pitch</p>
+            <ol class="steps">
+              <li><b>01</b> Load a clip or share a browser tab</li>
+              <li><b>02</b> Press play — players and ball are picked up live</li>
+              <li><b>03</b> Read possession, passes and shape on the right</li>
+            </ol>
+            <div class="actions">
+              <label class="btn btn--solid">Choose a clip<input id="file" type="file" accept="video/*" hidden /></label>
+              <button class="btn" id="btn-tab" type="button">Analyse a browser tab</button>
+            </div>
+            <p class="fine">Works with your own recordings and highlight clips. Hotstar, SonyLIV and other paid apps are copy-protected — they show up black.</p>
+          </div>
+        </div>
+
+        <p class="notice" id="notice" role="alert" hidden></p>
+        <p class="calib-hint" id="calib-hint" hidden></p>
+      </div>
+
+      <div class="transport">
+        <button class="play" id="play" type="button" aria-label="Play or pause">
+          <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
+          <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z"/></svg>
+        </button>
+        <span class="tc" id="tc">00:00 / 00:00</span>
+        <input class="scrub" id="scrub" type="range" min="0" max="1000" value="0" aria-label="Seek" />
+        <label class="speed"><span>Speed</span>
+          <select id="speed" title="Slower playback lets a slow computer analyse more frames">
+            <option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option>
+          </select>
+        </label>
+        <fieldset class="toggles">
+          <legend class="sr">Overlay</legend>
+          <label><input type="checkbox" id="t-markers" checked /><span>Markers</span></label>
+          <label><input type="checkbox" id="t-ids" checked /><span>Numbers</span></label>
+          <label><input type="checkbox" id="t-trail" checked /><span>Ball trail</span></label>
+        </fieldset>
+      </div>
+
+      <div class="calib">
+        <span class="calib__label">Pitch mapping</span>
+        <select id="calib-ref" aria-label="Reference shape"></select>
+        <button class="btn btn--small" id="btn-calib" type="button">Mark 4 points</button>
+        <span class="calib__note" id="pitch-note"></span>
+      </div>
+    </section>
+
+    <aside class="rail reveal" aria-labelledby="h-board">
+      <h2 class="label" id="h-board"><span>02</span> The board</h2>
+
+      <div class="board">
+        <div class="side side--a">
+          <span class="side__kit" aria-hidden="true"></span>
+          <span class="side__name" id="name-a" contenteditable="true" spellcheck="false">Home</span>
+          <span class="side__pos"><b id="pos-a">50</b><i>%</i></span>
+        </div>
+        <div class="side side--b">
+          <span class="side__kit" aria-hidden="true"></span>
+          <span class="side__name" id="name-b" contenteditable="true" spellcheck="false">Away</span>
+          <span class="side__pos"><b id="pos-b">50</b><i>%</i></span>
+        </div>
+        <div class="split" aria-hidden="true"><i id="split-a"></i></div>
+        <p class="board__cap">Possession <span class="dim">·</span> <span id="kits">Reading kits…</span></p>
+      </div>
+
+      <table class="stats">
+        <caption class="sr">Match statistics</caption>
+        <tbody>
+          <tr><td id="s-passes-a">0</td><th scope="row">Passes</th><td id="s-passes-b">0</td></tr>
+          <tr><td id="s-won-a">0</td><th scope="row">Ball won back</th><td id="s-won-b">0</td></tr>
+          <tr><td id="s-dist-a">0.00</td><th scope="row">Distance, km</th><td id="s-dist-b">0.00</td></tr>
+          <tr><td id="s-seen-a">0</td><th scope="row">Players tracked</th><td id="s-seen-b">0</td></tr>
+        </tbody>
+      </table>
+      <p class="fine" id="ball-seen">Waiting for play</p>
+
+      <h2 class="label"><span>03</span> Shape</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="heat" aria-selected="true">Heatmap</button>
+        <button role="tab" data-tab="net" aria-selected="false">Pass network</button>
+        <button role="tab" data-tab="time" aria-selected="false">Timeline</button>
+      </div>
+
+      <div class="pane" id="pane-heat">
+        <div class="seg">
+          <button data-heat="0" aria-pressed="true"><i class="dot dot--a"></i>Home</button>
+          <button data-heat="1" aria-pressed="false"><i class="dot dot--b"></i>Away</button>
+          <button data-heat="ball" aria-pressed="false"><i class="dot dot--ball"></i>Ball</button>
+        </div>
+        <div class="turf"><canvas id="heat"></canvas><div id="pitch-heat"></div></div>
+      </div>
+      <div class="pane" id="pane-net" hidden>
+        <div class="seg">
+          <button data-net="0" aria-pressed="true"><i class="dot dot--a"></i>Home</button>
+          <button data-net="1" aria-pressed="false"><i class="dot dot--b"></i>Away</button>
+        </div>
+        <div class="turf" id="net"></div>
+      </div>
+      <div class="pane" id="pane-time" hidden>
+        <ol class="timeline" id="timeline"></ol>
+      </div>
+
+      <div class="rail__foot">
+        <button class="btn btn--small" id="btn-json" type="button">Export JSON</button>
+        <button class="btn btn--small" id="btn-csv" type="button">Events CSV</button>
+        <button class="btn btn--small btn--quiet" id="btn-reset" type="button">Reset numbers</button>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="colophon">
+    <p>Detection and tracking run on this device — the footage never leaves your browser.</p>
+    <p class="dim">Numbers come from an automatic model and are estimates, not official match data.</p>
+  </footer>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+__pycache__/
+*.pt
+*.onnx
+runs/
+datasets/
+.pytest_cache/
